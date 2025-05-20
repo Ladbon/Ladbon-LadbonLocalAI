@@ -1,0 +1,6 @@
+FROM llava:7b
+PARAMETER temperature 0.2
+PARAMETER num_gpu 1
+PARAMETER num_ctx 2048
+PARAMETER f16_kv true
+PARAMETER seed 42
