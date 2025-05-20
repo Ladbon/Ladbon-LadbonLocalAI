@@ -1,8 +1,9 @@
-# filepath: c:\Users\ladfr\source\localai\src\requirements.txt
+# filepath: \src\requirements.txt
 requests>=2.28.0
 beautifulsoup4>=4.11.0
 sentence-transformers>=2.2.0
 faiss-cpu>=1.7.0
+numpy>=1.20.0 
 PyPDF2>=2.0.0
 python-docx>=0.8.11
 pytesseract>=0.3.9
