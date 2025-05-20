@@ -1,0 +1,9 @@
+FROM qwen3:8b
+PARAMETER temperature 0.2
+PARAMETER top_p 0.7
+PARAMETER seed 42
+PARAMETER num_gpu 1
+PARAMETER num_thread 4
+PARAMETER f16_kv true
+PARAMETER repeat_penalty 1.1
+PARAMETER stop ["User:", "You:", "AI:", "Human:"]
