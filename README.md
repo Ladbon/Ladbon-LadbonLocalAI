@@ -1,177 +1,138 @@
-Ladbon: I have a repo  https://github.com/Ladbon/Ladbon-LadbonLocalAI that I want to push to. How.
+GitHub Copilot: # Ladbon AI Desktop
 
-GitHub Copilot: To push your local repository to the GitHub repository `https://github.com/Ladbon/Ladbon-LadbonLocalAI`, follow these steps:
+A desktop application for interacting with AI models through Ollama, featuring document analysis, image recognition, and web search capabilities.
 
-1. **Initialize Git (if not already initialized):**
-   If your local repository is not already a Git repository, initialize it:
-   ```bash
-   git init
+## Features
+
+- **Multi-Model Support**: Compatible with Llama, Mistral, Qwen, LLaVA, Gemma, Phi-3, and DeepSeek models
+- **Document Analysis**: Process PDFs, TXT, and Word documents
+- **Image Recognition**: Analyze images with compatible vision models
+- **OCR Capabilities**: Extract text from images
+- **Web Search**: Search the internet for real-time information
+- **Conversation Memory**: Maintains context for natural conversations
+- **Settings Persistence**: Remembers your model selection and token preferences
+
+## Requirements
+
+```
+PyQt5>=5.15.0
+requests>=2.25.0
+beautifulsoup4>=4.9.0 
+pillow>=8.0.0
+PyPDF2>=2.0.0
+python-docx>=0.8.10
+pytesseract>=0.3.8
+```
+
+## Installation
+
+### Prerequisites
+
+1. **Install Ollama** from [ollama.com/download](https://ollama.com/download)
+2. **Install Python 3.8+** if not already installed
+
+### Option 1: Run from Source
+
+1. Clone the repository:
    ```
-
-2. **Add the GitHub repository as a remote:**
-   Add the GitHub repository URL as the `origin` remote:
-   ```bash
-   git remote add origin https://github.com/Ladbon/Ladbon-LadbonLocalAI.git
-   ```
-
-3. **Check the current status:**
-   Check which files are staged or untracked:
-   ```bash
-   git status
-   ```
-
-4. **Stage your changes:**
-   Add all files to the staging area:
-   ```bash
-   git add .
-   ```
-
-5. **Commit your changes:**
-   Commit the staged files with a meaningful commit message:
-   ```bash
-   git commit -m "Initial commit"
-   ```
-
-6. **Push to the GitHub repository:**
-   Push your changes to the `main` branch (or the default branch of your GitHub repository):
-   ```bash
-   git push -u origin main
-   ```
-
-If you encounter any issues (e.g., authentication errors), ensure you are logged in to GitHub and have the necessary permissions. You may need to use a personal access token instead of your password if GitHub requires it. Let me know if you need help with any of these steps!
-
-Ladbon: I tried using the gui after git remote add and git status (instead of git add .)
-
-GitHub Copilot: 
-
-Ladbon: I tried using the gui after git remote add and git status (instead of git add .)
-
-GitHub Copilot: It looks like Git doesn't know your identity, which is needed to make a commit. You'll need to configure your `user.name` and `user.email` for Git.
-
-You can do this by running the following commands in your terminal, replacing `"Your Name"` and `"you@example.com"` with your actual name and email address:
- 
-
-Ladbon: I need a proper readme.md. Read the code and write me a beautifully written readme as to how to use this application. 
-
-
-Workspace: Collecting workspace information# LocalAI Desktop
-
-![LocalAI Desktop](https://img.shields.io/badge/LocalAI-Desktop-blue)
-
-A powerful Windows desktop application for running AI chat models completely locally using Ollama. Chat with state-of-the-art large language models on your own hardware with advanced capabilities like document analysis, image understanding, and web search integration.
-
-## ✨ Features
-
-- 🧠 **Multiple AI Models** - Support for Qwen3 (8B, 4B, 1.7B) and LLaVa (7B) models
-- 📝 **Document Context** - Analyze and discuss PDF, DOCX, and TXT files
-- 🖼️ **Image Understanding** - Two image modes:
-  - OCR text extraction from images
-  - Full image analysis and visual understanding (using LLaVa)
-- 🌐 **Web Search Integration** - Research topics with DuckDuckGo search results
-- 💨 **Fast Chat Mode** - Quicker responses using lighter models
-- 🖥️ **Dual Interfaces** - Choose between GUI and CLI
-
-## 📋 Requirements
-
-- Windows 10/11
-- [Ollama](https://ollama.ai/download) installed
-- Python 3.8+ with pip
-- NVIDIA GPU recommended (but not required)
-
-## 🚀 Installation
-
-1. **Install Ollama**:
-   - Download and install from [ollama.ai/download](https://ollama.ai/download)
-   - Make sure Ollama is running (you should see the Ollama icon in your system tray)
-
-2. **Download Models**:
-   ```bash
-   ollama pull qwen3:8b
-   ollama pull llava:7b    # Required for image analysis
-   ```
-
-3. **Clone and Setup**:
-   ```bash
-   git clone https://github.com/username/localai.git
+   git clone https://github.com/yourusername/localai.git
    cd localai
+   ```
+
+2. Create and activate a virtual environment:
+   ```
+   python -m venv .venv
+   # Windows
+   .venv\Scripts\activate
+   # macOS/Linux
+   source .venv/bin/activate
+   ```
+
+3. Install dependencies:
+   ```
    pip install -r requirements.txt
    ```
 
-4. **For OCR Functionality** (optional):
-   - Install [Tesseract OCR](https://github.com/UB-Mannheim/tesseract/wiki)
-   - Ensure it's in your PATH environment variable
+4. Run the application:
+   ```
+   cd src
+   python gui_app.py
+   ```
 
-## 💻 Usage
+### Option 2: Run Executable
 
-### GUI Mode
+1. Download the latest release from the Releases page
+2. Extract the ZIP file
+3. Run `Ladbon AI Desktop.exe`
 
-Run the graphical interface:
-```bash
-python gui_app.py
-```
+## Usage
 
-The GUI provides:
-- Model selection dropdown
-- Input field for messages
-- Document loading button
-- Image analysis buttons
-- Web search integration
-- Settings panel
+### Getting Started
 
-### CLI Mode
+1. **Start Ollama** on your system
+2. **Launch Ladbon AI Desktop**
+3. **Select a model** from the dropdown menu
+4. **Type a message** and press Enter or click Send
 
-Run the command-line interface:
-```bash
-python main.py
-```
+### Working with Documents
 
-You'll see a menu with these options:
-1. Chat Mode (Qwen3)
-2. Document Chat (Load & Discuss PDF/TXT)
-3. Image OCR Chat (Extract & Discuss Text)
-4. Image Analysis Chat (Describe & Discuss)
-5. Web Search Chat (Research & Discuss)
-6. Fast Chat (Qwen3 1.7B)
-7. Clear History
-8. Exit
-9. Advanced Options
+1. Click the **Documents** tab
+2. Check the documents you want to include
+3. Ask questions about the selected documents
 
-## 🔍 Advanced Features
+### Image Analysis
 
-### Document Analysis
-Place PDF, DOCX, or TXT files in the docs directory and select them through the interface to analyze and discuss their contents.
-
-### Image Processing
-- **OCR**: Extract text from images for discussion
-- **Visual Analysis**: Analyze image content using multimodal models (LLaVa)
+1. Click the **Images** tab
+2. Check the image you want to analyze
+3. Select a compatible vision model (LLaVA, Llama 4, Phi-3)
+4. Ask questions about the selected image
 
 ### Web Search
-Research any topic with integrated web search that provides relevant context to the AI for better responses.
 
-### Performance Optimization
-- Fast Chat Mode for quick responses
-- Model unloading to save memory
-- Advanced temperature and context length settings
+1. Click the **🔍 Web** button (turns green when active)
+2. Enter your query
+3. The AI will search the web and use the results in its response
 
-## 📦 Building an Executable
+### Adjusting Settings
 
-To create a standalone Windows executable:
-```bash
-python api/package.py
+1. Set the **maximum tokens** for responses in the input box
+2. Click **Save Settings** to remember your preferences
+
+## Customization
+
+- **Add documents**: Place documents in the docs folder
+- **Add images**: Place images in the img folder
+- **Logs**: View application logs in the logs folder
+
+## Packaging the Application
+
+To create a standalone executable:
+
 ```
-The executable will be created in the `dist/` directory.
+cd src
+python package.py
+```
 
-## ⚠️ Troubleshooting
+The executable will be created in the `dist` folder.
 
-- **Ollama Connection Issues**: Ensure Ollama is running in the background
-- **OCR Not Working**: Verify Tesseract is installed and in PATH
-- **Out of Memory**: Try unloading unused models via Advanced Settings
-- **Slow Responses**: Switch to Fast Chat mode or use a smaller model
+## Known Limitations
 
-## 📜 License
+- Requires Ollama to be installed separately and running
+- Web search may be limited for complex queries
+- Image analysis requires vision-capable models
+- Some models have specific capabilities as noted in the UI
 
-This project is licensed under the Apache License 2.0 - see the LICENSE file for details.
+## Troubleshooting
+
+- **No models appear**: Make sure Ollama is running (`ollama serve` in terminal)
+- **Error loading models**: Check your internet connection
+- **Image analysis not working**: Verify you've selected a vision-capable model
+- **Slow responses**: Larger models require more processing time and resources
+
+## License
+
+Apache 2.0
 
 ---
 
-Created by Ladbon Fragari
+*Developed by Ladbon Fragari*

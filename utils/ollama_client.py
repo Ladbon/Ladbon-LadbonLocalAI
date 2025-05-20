@@ -28,7 +28,7 @@ class OllamaClient:
         # Add system prompt identifying you as the creator - keep it short for speed
         system_message = {
             "role": "system", 
-            "content": "You are LAIdbon, an AI assistant created by Ladbon Fragari."
+                "content": "You are an AI assistant created by Ladbon Fragari. Your name is Ladbon AI."
         }
         
         user_message = {
@@ -66,6 +66,42 @@ class OllamaClient:
         data = resp.json()
         return data.get("choices", [{}])[0].get("message", {}).get("content", "")
 
+
+    def list_models(self):
+        """Get list of models installed on Ollama"""
+        try:
+            # Try using the 'ollama list' command directly
+            import subprocess
+            result = subprocess.run(["ollama", "list"], capture_output=True, text=True)
+            if result.returncode == 0:
+                # Parse the output format from the command line
+                models = []
+                for line in result.stdout.splitlines()[1:]:  # Skip header line
+                    if line.strip():
+                        parts = line.strip().split()
+                        if parts:
+                            models.append(parts[0])  # First column is the model name
+                logger.info(f"Found {len(models)} models using CLI command: {models}")
+                return models
+        except Exception as e:
+            logger.warning(f"Failed to get models via CLI: {str(e)}")
+    
+        # If CLI fails, try the API endpoints as before
+        try:
+            response = requests.get(f"{self.address}/v1/models", timeout=10)
+            if response.status_code == 200:
+                data = response.json()
+                # Extract model names
+                models = [model['name'] for model in data.get('models', [])]
+                logger.info(f"Found {len(models)} models using v1/models endpoint: {models}")
+                return models
+        except Exception as e:
+            logger.warning(f"Failed to get models from API: {str(e)}")
+        
+        # If everything fails, return a default model
+        logger.warning("No models found - returning default")
+        return ["qwen3:8b"]
+            
     def generate_with_image(self, model: str, prompt: str, image_path: str, max_tokens: int = 2048, timeout: int = None) -> str:
         """Generate text with image input for multimodal models"""
         try:
