@@ -1,4 +1,4 @@
-GitHub Copilot: # Ladbon AI Desktop
+# Ladbon AI Desktop
 
 A desktop application for interacting with AI models through Ollama, featuring document analysis, image recognition, and web search capabilities.
 
@@ -29,9 +29,15 @@ pytesseract>=0.3.8
 ### Prerequisites
 
 1. **Install Ollama** from [ollama.com/download](https://ollama.com/download)
-2. **Install Python 3.8+** if not already installed
+2. **Install Python 3.8+** if not already installed (only needed if running from source)
 
-### Option 1: Run from Source
+### Option 1: Windows Installer (Recommended)
+
+1. Download the latest installer (`Ladbon_AI_Desktop_Setup.exe`) from the Releases page
+2. Run the installer and follow the on-screen instructions
+3. Launch Ladbon AI Desktop from your Start menu or desktop shortcut
+
+### Option 2: Run from Source
 
 1. Clone the repository:
    ```
@@ -59,11 +65,12 @@ pytesseract>=0.3.8
    python gui_app.py
    ```
 
-### Option 2: Run Executable
+### Option 3: Portable Executable
 
-1. Download the latest release from the Releases page
-2. Extract the ZIP file
-3. Run `Ladbon AI Desktop.exe`
+1. Download the standalone executable (`Ladbon AI Desktop.exe`) from the Releases page
+2. Create a folder where you want to run the application
+3. Create `docs` and `img` subfolders in the same location
+4. Run `Ladbon AI Desktop.exe`
 
 ## Usage
 
@@ -76,16 +83,14 @@ pytesseract>=0.3.8
 
 ### Working with Documents
 
-1. Click the **Documents** tab
-2. Check the documents you want to include
-3. Ask questions about the selected documents
+1. Check the documents you want to include in the sidebar
+2. Ask questions about the selected documents
 
 ### Image Analysis
 
-1. Click the **Images** tab
-2. Check the image you want to analyze
-3. Select a compatible vision model (LLaVA, Llama 4, Phi-3)
-4. Ask questions about the selected image
+1. Check the image you want to analyze in the sidebar
+2. Select a compatible vision model (LLaVA, Llama 4, Phi-3)
+3. Ask questions about the selected image
 
 ### Web Search
 
@@ -95,16 +100,19 @@ pytesseract>=0.3.8
 
 ### Adjusting Settings
 
-1. Set the **maximum tokens** for responses in the input box
-2. Click **Save Settings** to remember your preferences
+1. Go to the **Settings** tab
+2. Set the **maximum tokens** for responses in the input box
+3. Click **Save Settings** to remember your preferences
 
 ## Customization
 
-- **Add documents**: Place documents in the docs folder
-- **Add images**: Place images in the img folder
-- **Logs**: View application logs in the logs folder
+- **Add documents**: Place documents in the `docs` folder
+- **Add images**: Place images in the `img` folder
+- **Logs**: View application logs in the **Logs** tab or in the `logs` folder
 
-## Packaging the Application
+## Building the Application
+
+### Creating the Executable
 
 To create a standalone executable:
 
@@ -114,6 +122,14 @@ python package.py
 ```
 
 The executable will be created in the `dist` folder.
+
+### Creating an Installer
+
+1. Run `package.py` to create the executable
+2. Install Inno Setup from [jrsoftware.org/isinfo.php](https://jrsoftware.org/isinfo.php)
+3. Open `LadboAIDesktop.iss` in Inno Setup
+4. Press F9 or click Build > Compile
+5. The installer will be created in the `installer` folder
 
 ## Known Limitations
 
@@ -128,6 +144,7 @@ The executable will be created in the `dist` folder.
 - **Error loading models**: Check your internet connection
 - **Image analysis not working**: Verify you've selected a vision-capable model
 - **Slow responses**: Larger models require more processing time and resources
+- **No logs displayed**: Check the `logs` folder to ensure log files are being created
 
 ## License
 

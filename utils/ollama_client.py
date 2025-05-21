@@ -25,10 +25,19 @@ class OllamaClient:
 
     def generate(self, model: str, prompt: str, max_tokens: int = 8000, timeout: int = None, options: dict = None) -> str:
         """Generate chat completions with personalized creator attribution"""
-        # Add system prompt identifying you as the creator - keep it short for speed
+        # Add system prompt with thinking/answer separation instructions
         system_message = {
             "role": "system", 
-                "content": "You are an AI assistant created by Ladbon Fragari. Your name is Ladbon AI."
+            "content": """You are an AI assistant created by Ladbon Fragari. Your name is Ladbon AI.
+            
+            When answering questions, separate your internal reasoning from your final answer using the following format:
+            
+            <think>
+            Your step-by-step reasoning, considerations, and analysis here...
+            </think>
+            
+            Your final concise answer directly after the closing tag.
+            """
         }
         
         user_message = {

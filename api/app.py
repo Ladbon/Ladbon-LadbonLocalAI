@@ -683,14 +683,35 @@ class LocalAIApp(QMainWindow):
         # Calculate time elapsed
         elapsed = time.time() - self.start_time if hasattr(self, "start_time") else 0
         
-        # Add response to chat
-        self.add_to_chat("AI", response)
+        # Split thinking from answer if possible
+        thought = None
+        answer = response
+        
+        if "<think>" in response and "</think>" in response:
+            try:
+                thought = response.split("<think>")[1].split("</think>")[0].strip()
+                answer = response.split("</think>")[1].strip()
+            except IndexError:
+                # If the splitting fails, fall back to the full response
+                self.logger.warning("Failed to split thinking/answer, using full response")
+        
+        # Display thinking part if available
+        if thought:
+            self.chat_display.append("<div style='margin-top:10px;'><b>AI thinking:</b></div>")
+            self.chat_display.append(f"<div style='color: #666666; font-style: italic; margin-left:10px;'>{thought}</div>")
+            
+            # Add a separator
+            self.chat_display.append("<div style='border-top:1px solid #ccc; margin:10px 0;'></div>")
+        
+        # Display the answer part
+        self.chat_display.append("<div style='margin-top:10px;'><b>AI response:</b></div>")
+        self.chat_display.append(f"<div style='color: #000080; margin-left:10px;'>{answer}</div>")
         
         # Add performance metrics
         tokens_estimated = len(response) / 4  # Rough estimate
         tokens_per_second = tokens_estimated / elapsed if elapsed > 0 else 0
         metrics = f"[Generated in {elapsed:.2f}s, ~{tokens_per_second:.1f} tokens/s]"
-        self.chat_display.append(f"<span style='color: gray; font-size: 8pt;'>{metrics}</span>")
+        self.chat_display.append(f"<div style='color: gray; font-size: 8pt; margin-top:5px;'>{metrics}</div>")
         
         # Add to history
         self.history.append({"role": "assistant", "content": response})
@@ -794,7 +815,7 @@ class LocalAIApp(QMainWindow):
                 return
                 
             log_files = [os.path.join(logs_dir, f) for f in os.listdir(logs_dir) 
-                         if f.startswith('localai_') and f.endswith('.log')]
+                         if f.endswith('.log')]  # Look for any log file
             
             if not log_files:
                 self.logs_display.setPlainText("No log files found.")
