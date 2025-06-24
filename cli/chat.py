@@ -1,14 +1,15 @@
 import sys, os, time
-from typing import List, Dict
+from typing import List, Dict, Optional
 from utils.ollama_client import OllamaClient
 
 class ChatSession:
     def __init__(self, client: OllamaClient, model: str = "qwen3:8b", 
-         max_tokens: int = 10000, timeout: int = None):
+         max_tokens: int = 10000, timeout: int = 0, system_prompt: Optional[str] = None):
         self.client = client
         self.model = model
         self.max_tokens = max_tokens
         self.timeout = timeout
+        self.system_prompt = system_prompt
         self.history: List[Dict[str, str]] = []
         
         # Check Ollama availability
@@ -236,11 +237,17 @@ class ChatSession:
             start_time = time.time()
             self._trim_history_if_needed()
 
+            # Prepare options with system prompt if available
+            options = {}
+            if self.system_prompt:
+                options["system_message"] = self.system_prompt
+
             response = self.client.generate(
                 model=self.model,
                 prompt=prompt,
                 max_tokens=self.max_tokens,
-                timeout=self.timeout
+                timeout=self.timeout,
+                options=options
             )
             
             end_time = time.time()
@@ -282,11 +289,17 @@ class ChatSession:
             start_time = time.time()
             self._trim_history_if_needed()
 
+            # Prepare options with system prompt if available
+            options = {}
+            if self.system_prompt:
+                options["system_message"] = self.system_prompt
+
             response = self.client.generate(
                 model=self.model,
                 prompt=prompt,
                 max_tokens=self.max_tokens,
-                timeout=self.timeout
+                timeout=self.timeout,
+                options=options
             )
             
             end_time = time.time()
@@ -329,7 +342,8 @@ class ChatSession:
         # First, let the AI describe the image on its own
         print("\nAI is analyzing the image...")
         from cli.img_handler import query_image
-        initial_response = query_image(self.client, img_path, "Describe this image in detail.", "llava:7b")
+        initial_response = query_image(self.client, img_path, "Describe this image in detail.", 
+                                      model="llava:7b", system_prompt=self.system_prompt)
         print(f"\nAI: {initial_response}")
         
         # Add to history
@@ -423,11 +437,17 @@ Search terms:"""
         
         self._trim_history_if_needed()
         
+        # Prepare options with system prompt if available
+        options = {}
+        if self.system_prompt:
+            options["system_message"] = self.system_prompt
+        
         search_terms = self.client.generate(
             model=self.model,
             prompt=prompt,
             max_tokens=100,
-            timeout=self.timeout
+            timeout=self.timeout,
+            options=options
         )
         
         return search_terms.strip()
@@ -458,6 +478,10 @@ Search terms:"""
             "num_ctx": 1024,  # Smaller context
             "repeat_penalty": 1.1
         }
+        
+        # Add system prompt if available
+        if self.system_prompt:
+            payload_options["system_message"] = self.system_prompt
         
         while True:
             user_input = input("\nYou: ")

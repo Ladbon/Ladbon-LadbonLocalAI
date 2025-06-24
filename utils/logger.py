@@ -9,29 +9,45 @@ def setup_logger(name='localai'):
     logs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
     os.makedirs(logs_dir, exist_ok=True)
     
-    # Create a unique log filename with timestamp
-    timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    log_file = os.path.join(logs_dir, f"{name}_{timestamp}.log")
-    
-    # Configure logger
+    # Create a logger
     logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
     
-    # File handler for detailed logging
-    file_handler = logging.FileHandler(log_file)
+    # Create handlers
+    log_file = os.path.join(logs_dir, f"{datetime.datetime.now().strftime('%Y-%m-%d')}.log")
+    file_handler = logging.FileHandler(log_file, encoding='utf-8')  # Use UTF-8 encoding
     file_handler.setLevel(logging.DEBUG)
-    file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    file_handler.setFormatter(file_formatter)
     
-    # Console handler for basic logging
-    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
-    console_formatter = logging.Formatter('%(levelname)s: %(message)s')
+    
+    # Create a custom formatter that handles encoding errors
+    class SafeFormatter(logging.Formatter):
+        def format(self, record):
+            # Format the message
+            formatted_message = super().format(record)
+            # Replace characters that might cause encoding issues in console
+            if isinstance(formatted_message, str):
+                try:
+                    # Test if it can be encoded in cp1252
+                    formatted_message.encode('cp1252')
+                except UnicodeEncodeError:
+                    # If not, replace problematic characters
+                    formatted_message = formatted_message.encode('cp1252', errors='replace').decode('cp1252')
+            return formatted_message
+    
+    # Create formatters
+    file_formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    console_formatter = SafeFormatter('%(levelname)s: %(message)s')
+    
+    # Add formatters to handlers
+    file_handler.setFormatter(file_formatter)
     console_handler.setFormatter(console_formatter)
     
-    # Add handlers to logger
-    logger.addHandler(file_handler)
-    logger.addHandler(console_handler)
+    # Add handlers to the logger
+    if not logger.handlers:
+        logger.addHandler(file_handler)
+        logger.addHandler(console_handler)
     
     logger.info(f"Logging started to {log_file}")
     return logger

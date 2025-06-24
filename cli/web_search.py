@@ -9,20 +9,21 @@ def search(query: str, max_results: int = 5) -> str:
         resp = requests.post(
             "https://html.duckduckgo.com/html/",
             data={"q": query},
-            timeout=10
+            timeout=20,  # Increased timeout for slower connections
+            
         )
         resp.raise_for_status()
     except Exception as e:
         return f"Web search error: {str(e)}"
     
-    soup = BeautifulSoup(resp.text, "html.parser")  # Use html.parser if lxml not available
+    soup = BeautifulSoup(resp.text, "html.parser")
     snippets = []
     
-    # Extract search results
-    results = soup.find_all("div", class_="result", limit=max_results)
+    # Extract search results using CSS selectors instead of find_all
+    results = soup.select("div.result", limit=max_results)
     for res in results:
-        title = res.find("a", class_="result__a")
-        text_snip = res.find("div", class_="result__snippet")
+        title = res.select_one("a.result__a")
+        text_snip = res.select_one("div.result__snippet")
         t = title.get_text() if title else ""
         s = text_snip.get_text() if text_snip else ""
         snippets.append(f"{t}: {s}")

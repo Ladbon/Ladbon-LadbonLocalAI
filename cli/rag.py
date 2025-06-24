@@ -12,7 +12,8 @@ class DocumentIndex:
             self.embedder = SentenceTransformer(embedding_model)
             self.documents = []
             self.faiss_index = None
-            self.dimension = None
+            # Get the embedding dimension from the model
+            self.dimension = self.embedder.get_sentence_embedding_dimension()
             self._faiss = faiss
         except ImportError:
             raise ImportError(
@@ -32,11 +33,13 @@ class DocumentIndex:
         
         # First time setup
         if self.faiss_index is None:
+            # Use the dimension from embeddings if not set yet
+            if self.dimension is None:
+                self.dimension = embeddings.shape[1]
             self.faiss_index = self._faiss.IndexFlatIP(self.dimension)
         
         self._faiss.normalize_L2(embeddings)
-        self.faiss_index.add(embeddings)
-        return True
+        self.faiss_index.add(embeddings)  # type: ignore
         return True
     
     def search(self, query: str, k: int = 3) -> List[str]:
@@ -49,7 +52,7 @@ class DocumentIndex:
         self._faiss.normalize_L2(q_emb)
         
         # Search
-        scores, indices = self.faiss_index.search(q_emb, k)
+        scores, indices = self.faiss_index.search(q_emb, k)  # type: ignore
         
         # Return matched documents
         return [self.documents[int(idx)] for idx in indices[0]]

@@ -1,4 +1,3 @@
-```inno
 ; -- LadboAIDesktop.iss --
 ; Inno Setup script for Ladbon AI Desktop
 
@@ -12,7 +11,7 @@ Compression=lzma2
 SolidCompression=yes
 OutputDir=installer
 OutputBaseFilename=Ladbon_AI_Desktop_Setup
-SetupIconFile=app_icon.ico
+; SetupIconFile=app_icon.ico
 
 [Dirs]
 Name: "{app}\docs"; Permissions: users-modify
@@ -42,4 +41,3 @@ begin
   MsgBox('This installer will set up Ladbon AI Desktop.' + #13#10 + #13#10 +
          'Please note that Ollama must be installed separately from ollama.com/download', mbInformation, MB_OK);
 end;
-```

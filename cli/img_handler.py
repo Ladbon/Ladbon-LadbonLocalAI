@@ -84,7 +84,9 @@ pytesseract.pytesseract.tesseract_cmd = r'C:\\path\\to\\tesseract.exe'
     except Exception as e:
         return f"Error processing image: {str(e)}"
 
-def query_image(client, image_path: str, query: str, model: str = "llava:7b"):
+from typing import Optional
+
+def query_image(client, image_path: str, query: str, model: str = "llava:7b", system_prompt: Optional[str] = None):
     """Ask a question about an image (visual understanding)"""
     try:
         # Use a streamlined list of best models
@@ -103,7 +105,12 @@ def query_image(client, image_path: str, query: str, model: str = "llava:7b"):
         for m in models_to_try:
             try:
                 print(f"\nTrying model: {m}")
-                response = client.generate_with_image(m, query, image_path, max_tokens=2048)
+                # Add options with system prompt if provided
+                options = {}
+                if system_prompt:
+                    options["system_message"] = system_prompt
+                
+                response = client.generate_with_image(m, query, image_path, max_tokens=2048, options=options)
                 
                 # If response looks good, return it
                 if not response.startswith("Error") and not response.startswith("ERROR"):
