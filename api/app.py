@@ -280,6 +280,9 @@ class LocalAIApp(QMainWindow):
         self.init_ui()
         self.ui_initialized = True 
         
+        # Load initial logs
+        self.load_logs()
+        
         # Only AFTER UI is ready, create Ollama client
         from utils.ollama_client import OllamaClient
         self.ollama_client = OllamaClient(connect_on_init=False)  
@@ -386,13 +389,9 @@ class LocalAIApp(QMainWindow):
         # Set the splitter sizes (70% chat, 30% sidebar)
         self.main_splitter.setSizes([700, 300])
         
-        # Add splitter to main layout
+        # Add splitter to main layout (top)
         main_layout.addWidget(self.main_splitter)
         
-        # Create and add tabs
-        self._create_tabs()
-        main_layout.addWidget(self.tabs)
-    
         # Set central widget
         container = QWidget()
         container.setLayout(main_layout)
@@ -401,7 +400,7 @@ class LocalAIApp(QMainWindow):
         # Load documents and images
         self.load_documents()
         self.load_images()
-        
+
     def _create_chat_area(self):
         """Create the chat area widget"""
         chat_widget = QWidget()
@@ -437,6 +436,10 @@ class LocalAIApp(QMainWindow):
         self.progress.setRange(0, 0)  # Indeterminate
         self.progress.hide()
         chat_layout.addWidget(self.progress)
+
+        # Create and add tabs (now inside chat area, below chat)
+        self._create_tabs()
+        chat_layout.addWidget(self.tabs)
         
         return chat_widget
 
@@ -474,6 +477,23 @@ class LocalAIApp(QMainWindow):
         img_layout.addWidget(self.img_list)
         right_layout.addLayout(img_layout)
         
+        # Add logs section to the right sidebar
+        logs_group = QGroupBox("Logs")
+        logs_layout = QVBoxLayout(logs_group)
+        
+        self.logs_display = QTextEdit()
+        self.logs_display.setReadOnly(True)
+        self.logs_display.setLineWrapMode(QTextEdit.WidgetWidth)  # Enable word wrapping
+        self.logs_display.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)  # Disable horizontal scrolling
+        logs_layout.addWidget(self.logs_display)
+        
+        # Add a refresh button for logs
+        refresh_logs_btn = QPushButton("Refresh Logs")
+        refresh_logs_btn.clicked.connect(self.load_logs)
+        logs_layout.addWidget(refresh_logs_btn)
+        
+        right_layout.addWidget(logs_group)
+        
         # Clear selections button
         clear_button = QPushButton("Clear Selections")
         clear_button.clicked.connect(self.clear_selections)
@@ -485,7 +505,7 @@ class LocalAIApp(QMainWindow):
         return right_widget
 
     def _create_tabs(self):
-        """Create the tabs for settings and logs"""
+        """Create the tabs for settings and AI models"""
         self.tabs = QTabWidget()
         
         self.main_layout = QVBoxLayout()
@@ -495,19 +515,7 @@ class LocalAIApp(QMainWindow):
         self.init_settings_tab() # Initialize the comprehensive settings tab
         self.tabs.addTab(self.settings_tab, "Settings")  # Add the settings tab to the tab widget
         
-        # Add Logs tab
-        self.logs_tab = QWidget()
-        self.tabs.addTab(self.logs_tab, "Logs")
-        logs_layout = QVBoxLayout(self.logs_tab)
-
-        self.logs_display = QTextEdit()
-        self.logs_display.setReadOnly(True)
-        logs_layout.addWidget(self.logs_display)
-
-        # Add a refresh button
-        refresh_logs_btn = QPushButton("Refresh Logs")
-        refresh_logs_btn.clicked.connect(self.load_logs)
-        logs_layout.addWidget(refresh_logs_btn)        # Initialize model management tab
+        # Initialize model management tab
         self.model_management_tab = self.init_model_management_tab()
         self.tabs.addTab(self.model_management_tab, "AI Models")
         
@@ -789,6 +797,8 @@ class LocalAIApp(QMainWindow):
             if os.path.exists(settings_path):
                 with open(settings_path, "r") as f:
                     settings = json.load(f)
+                    
+                    # General settings
                     self.current_model = settings.get("model", "qwen3:8b")
                     self.max_tokens = settings.get("max_tokens", 8192)
                     
@@ -798,8 +808,26 @@ class LocalAIApp(QMainWindow):
                     # Load timeout setting
                     self.timeout = settings.get("timeout")
                     
+                    # Load LlamaCpp settings
+                    self.n_ctx_setting = settings.get("n_ctx", self.n_ctx_setting)
+                    self.n_gpu_layers_setting = settings.get("n_gpu_layers", self.n_gpu_layers_setting)
+                    self.force_cpu_only = settings.get("force_cpu_only", self.force_cpu_only)
+                    
                     # Update UI
-                    self.tokens_input.setText(str(self.max_tokens))
+                    if hasattr(self, 'tokens_input'):
+                        self.tokens_input.setText(str(self.max_tokens))
+                    elif hasattr(self, 'settings_tokens_input'):
+                        self.settings_tokens_input.setText(str(self.max_tokens))
+                    
+                    # Update LlamaCpp settings UI if available
+                    if hasattr(self, 'n_ctx_input'):
+                        self.n_ctx_input.setValue(self.n_ctx_setting)
+                    
+                    if hasattr(self, 'n_gpu_layers_input'):
+                        self.n_gpu_layers_input.setValue(self.n_gpu_layers_setting)
+                    
+                    if hasattr(self, 'force_cpu_checkbox'):
+                        self.force_cpu_checkbox.setChecked(self.force_cpu_only)
                     
                     # Find and select the current model in combo box
                     for i in range(self.model_combo.count()):
@@ -808,6 +836,7 @@ class LocalAIApp(QMainWindow):
                             break
                             
                 self.logger.info(f"Settings loaded: Model '{self.current_model}', Max Tokens: {self.max_tokens}, System Prompt: {'(custom)' if self.custom_system_prompt_text else '(default)'}, Timeout: {self.timeout if self.timeout else 'None (no timeout)'}")
+                self.logger.info(f"LlamaCpp settings loaded: n_ctx={self.n_ctx_setting}, n_gpu_layers={self.n_gpu_layers_setting}, force_cpu_only={self.force_cpu_only}")
         except Exception as e:
             self.logger.exception("Error loading settings")
             
@@ -843,18 +872,35 @@ class LocalAIApp(QMainWindow):
                 timeout_value = self.timeout_input.value()
                 self.timeout = timeout_value if timeout_value > 0 else None
                 self.logger.info(f"Updated timeout: {self.timeout if self.timeout else 'None (no timeout)'}")
-              # Save settings to file
+              
+            # Load existing settings first to preserve LlamaCpp settings
+            settings_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "settings.json")
+            existing_settings = {}
+            try:
+                if os.path.exists(settings_path):
+                    with open(settings_path, "r") as f:
+                        existing_settings = json.load(f)
+            except Exception as e:
+                self.logger.warning(f"Failed to load existing settings: {str(e)}")
+            
+            # Prepare updated settings, preserving LlamaCpp settings
             settings = {
                 "model": self.current_model,
                 "max_tokens": self.max_tokens,
                 "custom_system_prompt": getattr(self, 'custom_system_prompt_text', ''),
-                "timeout": self.timeout
+                "timeout": self.timeout,
+                # Preserve LlamaCpp settings
+                "n_ctx": getattr(self, 'n_ctx_setting', existing_settings.get('n_ctx', 4096)),
+                "n_gpu_layers": getattr(self, 'n_gpu_layers_setting', existing_settings.get('n_gpu_layers', 0)),
+                "force_cpu_only": getattr(self, 'force_cpu_only', existing_settings.get('force_cpu_only', True))
             }
-            settings_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "settings.json")
+            
+            # Save all settings to file
             with open(settings_path, "w") as f:
                 json.dump(settings, f)
             self.show_status_message("Settings saved successfully", 3000)
             self.logger.info(f"Settings saved: Model='{self.current_model}', Max Tokens: {self.max_tokens}, System Prompt: {'(custom)' if getattr(self, 'custom_system_prompt_text', '') else '(default)'}, Timeout: {self.timeout if self.timeout else 'None (no timeout)'}")
+            self.logger.info(f"LlamaCpp settings preserved: n_ctx={settings['n_ctx']}, n_gpu_layers={settings['n_gpu_layers']}, force_cpu_only={settings['force_cpu_only']}")
         except Exception as e:
             self.logger.exception("Error saving settings")
             self.show_status_message(f"Error saving settings: {str(e)}", 3000)
@@ -879,6 +925,10 @@ class LocalAIApp(QMainWindow):
             with open(recent_log, 'r') as f:
                 # Read all lines and reverse them (newest first)
                 log_lines = f.readlines()
+                
+                # Ensure each line ends with a newline character
+                log_lines = [line.rstrip('\n') + '\n' + '\n' for line in log_lines]
+                
                 log_lines.reverse()
                 log_content = ''.join(log_lines)
                 self.logs_display.setPlainText(log_content)
@@ -889,7 +939,13 @@ class LocalAIApp(QMainWindow):
     
     def closeEvent(self, a0):
         """Save settings when the application is closed"""
-        self.save_settings()
+        try:
+            # Save both general settings and LlamaCpp settings
+            self.save_settings()
+            self.save_llamacpp_settings()
+            self.logger.info("All settings saved on application close")
+        except Exception as e:
+            self.logger.exception("Error saving settings on application close")
         super().closeEvent(a0)
 
     def toggle_web_search(self):
@@ -1847,6 +1903,7 @@ class LocalAIApp(QMainWindow):
             error_details = traceback.format_exc()
             self.logger.error(f"API Test Error: {str(e)}\n{error_details}")
             self.model_status_label.setText(f"API Test Error: {str(e)}")
+           
             QMessageBox.critical(self, "API Error", f"Error: {str(e)}\n\n{error_details}")
     
     def check_huggingface_version(self):
@@ -2169,7 +2226,34 @@ class LocalAIApp(QMainWindow):
                 self.llamacpp_client.update_config(n_ctx=self.n_ctx_setting, n_gpu_layers=actual_n_gpu_layers)
                 self.logger.info(f"Applied settings to LlamaCpp client: n_ctx={self.n_ctx_setting}, n_gpu_layers={actual_n_gpu_layers}")
                 
+            # Save settings to file
+            import json
+            settings_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "settings.json")
+            
+            # Load existing settings if available
+            try:
+                if os.path.exists(settings_path):
+                    with open(settings_path, "r") as f:
+                        settings = json.load(f)
+                else:
+                    settings = {}
+            except:
+                settings = {}
+                
+            # Update with LlamaCpp settings
+            settings.update({
+                "n_ctx": self.n_ctx_setting,
+                "n_gpu_layers": self.n_gpu_layers_setting,
+                "force_cpu_only": self.force_cpu_only
+            })
+            
+            # Write settings back to file
+            with open(settings_path, "w") as f:
+                json.dump(settings, f)
+                
             self.show_status_message("LlamaCpp settings saved successfully", 3000)
+            self.logger.info(f"LlamaCpp settings saved to file: n_ctx={self.n_ctx_setting}, n_gpu_layers={self.n_gpu_layers_setting}, force_cpu_only={self.force_cpu_only}")
+            
         except Exception as e:
             self.logger.exception("Error saving LlamaCpp settings")
             self.show_status_message(f"Error saving LlamaCpp settings: {str(e)}", 3000)
