@@ -1,0 +1,7 @@
+*.gz filter=lfs diff=lfs merge=lfs -text
+*.zip filter=lfs diff=lfs merge=lfs -text
+*.7z filter=lfs diff=lfs merge=lfs -text
+models/*.gguf filter=lfs diff=lfs merge=lfs -text
+installer/*.bin filter=lfs diff=lfs merge=lfs -text
+installer/*.exe filter=lfs diff=lfs merge=lfs -text
+installer/*.msi filter=lfs diff=lfs merge=lfs -text
