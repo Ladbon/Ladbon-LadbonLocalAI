@@ -172,4 +172,21 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Large installer files and binaries
+installer/*.bin
+installer/*.exe
+installer/*.msi
+installer/*.bin
+*.gz
+*.iso
+*.rar
+*.tar
+*.zip
+*.7z
+*.dmg
+
+# Model files
 models/*.gguf
+hf_cache/
+/hf_cache/
