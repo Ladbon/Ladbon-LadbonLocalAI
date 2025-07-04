@@ -3,10 +3,12 @@ import json
 from cli.chat import ChatSession
 from utils.ollama_client import OllamaClient
 from PyQt5.QtWidgets import QInputDialog
+from utils.data_paths import get_settings_path, first_run_migration
+import init_llama # Import the new module
 
 def load_settings():
     """Load settings from settings.json"""
-    settings_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'settings.json')
+    settings_path = get_settings_path()  # Use our utility function
     default_settings = {
         "model": "qwen3:8b", 
         "max_tokens": 8192,
@@ -25,6 +27,18 @@ def load_settings():
     return default_settings
 
 def main():
+    # Initialize the llama.cpp backend first
+    if not init_llama.initialize_llama_backend():
+        # The application should not proceed if the backend fails to initialize.
+        # You might want to show an error message to the user.
+        print("Fatal: Could not initialize the llama.cpp backend. Exiting.")
+        # In a GUI app, you would show a message box.
+        # For now, we'll just exit.
+        return
+
+    # Check for first run and migrate data if needed
+    first_run_migration()
+    
     # Load settings
     settings = load_settings()
     

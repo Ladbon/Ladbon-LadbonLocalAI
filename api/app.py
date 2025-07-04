@@ -6,12 +6,14 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QTextEdit, QLineEdit,
                              QTabWidget, QFileDialog, QLabel, QMessageBox,
                              QComboBox, QProgressBar, QStatusBar, QCheckBox,
                              QListWidget, QListWidgetItem, QSplitter, QFormLayout, QSpinBox,
-                             QGroupBox)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
+                             QGroupBox, QProgressDialog)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer, QObject
 from PyQt5.QtGui import QTextCursor, QIcon
 import time 
 import gc  # Add garbage collection module
 from utils.ollama_client import OllamaClient
+from utils.data_paths import get_settings_path, get_docs_dir, get_img_dir, get_logs_dir, get_models_dir, first_run_migration, get_app_data_dir
+from utils.hf_auth import setup_huggingface, is_hf_logged_in, save_hf_token, clear_hf_token, load_hf_token
 from cli.doc_handler import process_document
 from cli.img_handler import process_image, query_image
 from cli.web_search import search
@@ -148,6 +150,7 @@ MODEL_CAPABILITIES = {
 class GenerationThread(QThread):
     """Thread for running the text generation"""
     finished = pyqtSignal(str)
+    import os  # Add os import for path operations
     
     def __init__(self, client, model, prompt, max_tokens, timeout, options=None):
         """Initialize the generation thread with client, model, prompt, and options"""
@@ -160,7 +163,19 @@ class GenerationThread(QThread):
         self.options = options or {}
         
     def run(self):
-        try:            # Format the conversation for the model
+        # First check if we have a valid client
+        if not self.client:
+            self.finished.emit("Error: No AI model client available. Please ensure a model is selected and loaded.")
+            return
+            
+        # Check if client has a loaded model, specifically for llamacpp_client
+        if hasattr(self.client, 'health') and not self.client.health():
+            model_path = getattr(self.client, 'model_path', 'unknown')
+            self.finished.emit(f"Error: No model loaded. The model at {model_path} needs to be reloaded. Try switching models or restarting the application.")
+            return
+            
+        try:
+            # Format the conversation for the model
             # If options contains history, use it to format conversations properly
             messages = []
             
@@ -180,6 +195,11 @@ class GenerationThread(QThread):
             
             # For Ollama client, pass the model_id
             if hasattr(self.client, 'address') and 'ollama' in str(type(self.client)).lower():
+                # Extra check for model argument with Ollama
+                if not self.model_id_str:
+                    self.finished.emit("Error: No model selected for Ollama. Please select a model first.")
+                    return
+                    
                 response = self.client.generate(
                     model=self.model_id_str,
                     prompt=self.prompt,
@@ -193,7 +213,20 @@ class GenerationThread(QThread):
                 # Set history in the format LlamaCPP expects
                 if len(messages) > 1:  # If we have more than just the user message
                     generation_options["history"] = messages
-                    
+                
+                # Double check model is loaded
+                if not hasattr(self.client, 'loaded_model') or self.client.loaded_model is None:
+                    model_path = getattr(self.client, 'model_path', None)
+                    if model_path and os.path.exists(model_path):
+                        # Try to reload the model
+                        success = self.client.load_model(model_path)
+                        if not success:
+                            self.finished.emit(f"Error: Failed to reload model at {model_path}. Try restarting the application.")
+                            return
+                    else:
+                        self.finished.emit("Error: No model is loaded. Please select a model first.")
+                        return
+                        
                 response = self.client.generate(
                     prompt=self.prompt,
                     max_tokens=self.max_tokens,
@@ -247,6 +280,10 @@ class LocalAIApp(QMainWindow):
 
         self.logger.info("LocalAIApp GUI application starting")
         
+        # Check for first run and migrate data if needed
+        first_run_migration()
+        self.logger.info(f"Using app data directory: {get_app_data_dir()}")
+        
         self.ui_initialized = False 
         
         # Initialize with integrated backend first
@@ -282,6 +319,10 @@ class LocalAIApp(QMainWindow):
         
         # Load initial logs
         self.load_logs()
+        
+        # Setup HuggingFace authentication and cache
+        setup_huggingface()
+        self.logger.info("HuggingFace authentication setup completed")
         
         # Only AFTER UI is ready, create Ollama client
         from utils.ollama_client import OllamaClient
@@ -532,6 +573,100 @@ class LocalAIApp(QMainWindow):
         info_label = QLabel(info_text)
         info_label.setWordWrap(True)
         layout.addWidget(info_label)
+        
+        # Hugging Face Authentication Section
+        from utils.hf_auth import is_hf_logged_in, save_hf_token, clear_hf_token
+        
+        hf_group = QGroupBox("Hugging Face Authentication")
+        hf_layout = QVBoxLayout()
+        
+        hf_info_text = """<html><body>
+        <p>Authenticate with Hugging Face to download models. Get your token from 
+        <a href="https://huggingface.co/settings/tokens">https://huggingface.co/settings/tokens</a></p>
+        </body></html>"""
+        
+        hf_info_label = QLabel(hf_info_text)
+        hf_info_label.setOpenExternalLinks(True)
+        hf_info_label.setWordWrap(True)
+        hf_layout.addWidget(hf_info_label)
+        
+        hf_input_layout = QHBoxLayout()
+        self.hf_token_input = QLineEdit()
+        self.hf_token_input.setEchoMode(QLineEdit.Password)  # Hide the token like a password
+        self.hf_token_input.setPlaceholderText("Enter your Hugging Face token here")
+        
+        hf_save_btn = QPushButton("Save Token")
+        hf_clear_btn = QPushButton("Clear Token")
+        
+        # Check current login status
+        hf_status_label = QLabel()
+        if is_hf_logged_in():
+            hf_status_label.setText("Status: Authenticated with Hugging Face")
+            hf_status_label.setStyleSheet("color: green")
+        else:
+            hf_status_label.setText("Status: Not authenticated")
+            hf_status_label.setStyleSheet("color: red")
+        
+        hf_input_layout.addWidget(self.hf_token_input)
+        hf_input_layout.addWidget(hf_save_btn)
+        hf_input_layout.addWidget(hf_clear_btn)
+        
+        hf_layout.addLayout(hf_input_layout)
+        hf_layout.addWidget(hf_status_label)
+        
+        # Connect buttons to functions
+        def on_save_token():
+            token = self.hf_token_input.text().strip()
+            if not token:
+                QMessageBox.warning(self, "Token Required", "Please enter a valid Hugging Face token.")
+                return
+            
+            # Show a proper modal progress dialog during authentication
+            progress_dialog = QProgressDialog("Authenticating with Hugging Face...", None, 0, 0, self)
+            progress_dialog.setWindowTitle("Authenticating")
+            progress_dialog.setModal(True)  # This is the correct way to make it modal
+            progress_dialog.show()
+            QApplication.processEvents()
+            
+            self.logger.info("Attempting to save Hugging Face token and authenticate...")
+            
+            try:
+                success, message = save_hf_token(token)
+                progress_dialog.close()  # Close the progress dialog
+                self.show_status_message("")  # Clear the status message
+                
+                if success:
+                    self.logger.info(f"Hugging Face authentication successful: {message}")
+                    QMessageBox.information(self, "Success", f"Hugging Face authentication successful!\n{message}")
+                    hf_status_label.setText(f"Status: {message}")
+                    hf_status_label.setStyleSheet("color: green")
+                    self.hf_token_input.clear()  # Clear the input for security
+                else:
+                    self.logger.error(f"Failed to authenticate with Hugging Face: {message}")
+                    QMessageBox.critical(self, "Error", f"Failed to save token: {message}")
+            except Exception as e:
+                progress_dialog.close()  # Close the progress dialog
+                self.show_status_message("")  # Clear the status message
+                self.logger.exception(f"Exception during Hugging Face authentication: {str(e)}")
+                QMessageBox.critical(self, "Error", f"An error occurred: {str(e)}")
+        
+        def on_clear_token():
+            self.logger.info("Clearing Hugging Face token...")
+            success, message = clear_hf_token()
+            if success:
+                self.logger.info("Hugging Face token removed successfully")
+                QMessageBox.information(self, "Success", "Hugging Face token removed.")
+                hf_status_label.setText("Status: Not authenticated")
+                hf_status_label.setStyleSheet("color: red")
+            else:
+                self.logger.error(f"Failed to remove Hugging Face token: {message}")
+                QMessageBox.critical(self, "Error", f"Failed to remove token: {message}")
+        
+        hf_save_btn.clicked.connect(on_save_token)
+        hf_clear_btn.clicked.connect(on_clear_token)
+        
+        hf_group.setLayout(hf_layout)
+        layout.addWidget(hf_group)
         
         # General Settings Section
         general_group = QGroupBox("General Settings")
@@ -793,7 +928,7 @@ class LocalAIApp(QMainWindow):
         import json
         self.logger.debug("Loading settings...")
         try:
-            settings_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "settings.json")
+            settings_path = get_settings_path()  # Use our utility function
             if os.path.exists(settings_path):
                 with open(settings_path, "r") as f:
                     settings = json.load(f)
@@ -874,7 +1009,7 @@ class LocalAIApp(QMainWindow):
                 self.logger.info(f"Updated timeout: {self.timeout if self.timeout else 'None (no timeout)'}")
               
             # Load existing settings first to preserve LlamaCpp settings
-            settings_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "settings.json")
+            settings_path = get_settings_path()  # Use our utility function
             existing_settings = {}
             try:
                 if os.path.exists(settings_path):
@@ -908,7 +1043,7 @@ class LocalAIApp(QMainWindow):
     def load_logs(self):
         """Load the most recent log file with newest entries at the top"""
         try:
-            logs_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs")
+            logs_dir = get_logs_dir()  # Use our utility function
             if not os.path.exists(logs_dir):
                 self.logs_display.setPlainText("No logs directory found.")
                 return
@@ -1042,22 +1177,13 @@ class LocalAIApp(QMainWindow):
         self.model_info_label.setWordWrap(True)
         layout.addWidget(self.model_info_label)
         
-        # Download button
-        self.download_button = QPushButton("Download Selected Model")
-        self.download_button.clicked.connect(self.download_model)
+        # Single download button
+        self.download_button = QPushButton("Download")
+        self.download_button.clicked.connect(self.force_download_model)
+        self.download_button.setToolTip("Download the selected model")
         layout.addWidget(self.download_button)
-        
-        # Force download button for when normal download is disabled
-        force_button = QPushButton("Force Download")
-        force_button.clicked.connect(self.force_download_model)
-        force_button.setToolTip("Force download even if the model appears to be downloaded")
-        layout.addWidget(force_button)
 
-        # Progress bar for downloads
-        self.download_progress = QProgressBar()
-        self.download_progress.setRange(0, 100)
-        self.download_progress.hide()
-        layout.addWidget(self.download_progress)
+        # We're removing the progress bar for downloads as requested
         
         # Status label
         self.model_status_label = QLabel("")
@@ -1076,6 +1202,7 @@ class LocalAIApp(QMainWindow):
         
         # Connect selection changed signal
         self.available_models_list.itemSelectionChanged.connect(self.update_model_info)
+        self.available_models_list.itemSelectionChanged.connect(self.update_download_button_state)
         
         # Add a separator line
         layout.addWidget(QLabel(""))
@@ -1116,7 +1243,7 @@ class LocalAIApp(QMainWindow):
             
             if not installed_model_ids:
                 if self.backend == "ollama":
-                    self.logger.warning("No models found in Ollama. Please install models first.")
+                    self.logger.warning("No models in Ollama. Please install models first.")
                     if self.statusBar() is not None:         
                         self.show_status_message("No models found in Ollama")
                 else:
@@ -1162,13 +1289,9 @@ class LocalAIApp(QMainWindow):
         """Load documents from docs folder and add them to the list with checkboxes"""
         self.doc_list.clear()
         
-        # Fix path to docs folder (inside src folder)
-        docs_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "docs")
-        
-        # Create docs directory if it doesn't exist
-        if not os.path.exists(docs_dir):
-            os.makedirs(docs_dir)
-            self.logger.info(f"Created docs directory: {docs_dir}")
+        # Get docs folder path from our utility function
+        docs_dir = get_docs_dir()
+        self.logger.info(f"Using docs directory: {docs_dir}")
         
         # Check if directory exists and is accessible
         if os.path.isdir(docs_dir):
@@ -1197,13 +1320,9 @@ class LocalAIApp(QMainWindow):
         """Load images from img folder and add them to the list with checkboxes"""
         self.img_list.clear()
         
-        # Fix path to img folder (inside src folder)
-        img_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "img")
-        
-        # Create img directory if it doesn't exist
-        if not os.path.exists(img_dir):
-            os.makedirs(img_dir)
-            self.logger.info(f"Created img directory: {img_dir}")
+        # Get img folder path from our utility function
+        img_dir = get_img_dir()
+        self.logger.info(f"Using img directory: {img_dir}")
         
         # Check if directory exists and is accessible
         if os.path.isdir(img_dir):
@@ -1231,8 +1350,8 @@ class LocalAIApp(QMainWindow):
     def on_doc_selection_changed(self, item):
         """Handle document selection change"""
         doc_name = item.text()
-        # Fix path to match where we're loading from
-        docs_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "docs")
+        # Get docs folder path from our utility function
+        docs_dir = get_docs_dir()
         doc_path = os.path.join(docs_dir, doc_name)
         
         if item.checkState() == Qt.CheckState.Checked:
@@ -1247,8 +1366,8 @@ class LocalAIApp(QMainWindow):
     def on_img_selection_changed(self, item):
         """Handle image selection change"""
         img_name = item.text()
-        # Fix path to match where we're loading from
-        img_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "img")
+        # Get img folder path from our utility function
+        img_dir = get_img_dir()
         img_path = os.path.join(img_dir, img_name)
         
         if item.checkState() == Qt.CheckState.Checked:
@@ -1601,9 +1720,19 @@ class LocalAIApp(QMainWindow):
                 item.setToolTip(f"Downloaded ({size_mb:.1f} MB)")
             
             self.available_models_list.addItem(item)
+        
+        # Sort the list to make models easier to find
+        self.available_models_list.sortItems()
 
     def load_available_models(self):
         """Load available models with metadata from HuggingFaceManager"""
+        # Save current selection if any
+        selected_model_id = None
+        selected_items = self.available_models_list.selectedItems()
+        if selected_items and len(selected_items) > 0:
+            selected_model_id = selected_items[0].data(Qt.ItemDataRole.UserRole)
+        
+        # Clear and reload the list
         self.available_models_list.clear()
         self.model_status_label.setText("Loading models...")
         
@@ -1618,6 +1747,14 @@ class LocalAIApp(QMainWindow):
                 self.logger.info(f"Loaded {len(models)} available models")
                 self.model_status_label.setText(f"Loaded {len(models)} models")
                 
+                # Restore selection if possible
+                if selected_model_id:
+                    for i in range(self.available_models_list.count()):
+                        item = self.available_models_list.item(i)
+                        if item and item.data(Qt.ItemDataRole.UserRole) == selected_model_id:
+                            self.available_models_list.setCurrentItem(item)
+                            break
+                
             except Exception as e:
                 self.logger.error(f"Error loading available models: {str(e)}")
                 self.model_status_label.setText(f"Error: {str(e)}")
@@ -1628,7 +1765,7 @@ class LocalAIApp(QMainWindow):
         self.update_download_button_state()
 
     def update_download_button_state(self):
-        """Update download button state based on selection"""
+        """Update download button state based on selection and download status"""
         if self.backend != "integrated":
             self.download_button.setEnabled(False)
             self.download_button.setText("Use Ollama Pull Command")
@@ -1636,19 +1773,36 @@ class LocalAIApp(QMainWindow):
             
         selected_items = self.available_models_list.selectedItems()
         
-        # Always enable when something is selected in integrated mode
+        # Check if there's a selection
         if selected_items and len(selected_items) > 0:
             self.download_button.setEnabled(True)
-            self.download_button.setText("Download Selected Model")
+            
+            # Get the model ID and check if it's already downloaded
+            model_id = selected_items[0].data(Qt.ItemDataRole.UserRole)
+            
+            if hasattr(self, 'huggingface_manager'):
+                all_models = self.huggingface_manager.list_available_models(include_trending=True)
+                if model_id in all_models and all_models[model_id].get('is_downloaded', False):
+                    # Model is already downloaded, rename button to "Redownload"
+                    self.download_button.setText("Redownload")
+                else:
+                    # Model is not yet downloaded
+                    self.download_button.setText("Download")
+            else:
+                # Default state if huggingface_manager not ready
+                self.download_button.setText("Download")
         else:
+            # No selection
             self.download_button.setEnabled(False)
-            self.download_button.setText("Select a Model")
+            self.download_button.setText("Download")
 
     def update_model_info(self):
         """Update model information when selection changes"""
         selected_items = self.available_models_list.selectedItems()
         if not selected_items:
             self.model_info_label.setText("Select a model to see details")
+            # Also update download button state
+            self.update_download_button_state()
             return
         
         item = selected_items[0]
@@ -1661,7 +1815,7 @@ class LocalAIApp(QMainWindow):
                 info = models[model_id]
                 
                 # Build info text
-                info_text = f"<b>{model_id}</b>"
+                info_text = f"<b>{model_id}</b><br>"
                 info_text += f"Repository: {info.get('repo_id', 'Unknown')}<br>"
                 info_text += f"Description: {info.get('description', 'Unknown')}<br>"
                 
@@ -1695,113 +1849,162 @@ class LocalAIApp(QMainWindow):
         else:
             self.model_info_label.setText("Model information not available in Ollama mode")
 
-    def download_model(self):
-        """Download the selected model - simplified to use the same reliable method"""
-        self.force_download_model()
+    # Removed download_model method - using force_download_model directly
 
     def force_download_model(self):
         """Force download selected model"""
-        if self.backend != "integrated":
-            QMessageBox.information(self, "Ollama Mode", "In Ollama mode, use 'ollama pull model_name' to download models.")
-            return
+        self.logger.info("Force download model requested")
         
+        # Get selected model ID
         selected_items = self.available_models_list.selectedItems()
-        if not selected_items:
-            QMessageBox.warning(self, "No Selection", "Please select a model to download first.")
+        if not selected_items or len(selected_items) == 0:
+            self.logger.warning("No model selected for download")
+            QMessageBox.warning(self, "No Model Selected", "Please select a model to download.")
             return
         
-        # Get the selected model ID
-        model_id = selected_items[0].data(Qt.ItemDataRole.UserRole)
+        item = selected_items[0]
+        model_id = item.data(Qt.ItemDataRole.UserRole)
         
-        # Show confirmation dialog
-        confirm = QMessageBox.question(
-            self, "Download Model",
-            f"Download model '{model_id}'?\n\nThis will save the model to:\n{self.huggingface_manager.models_dir}",
-            QMessageBox.Yes | QMessageBox.No
-        )
+        if not model_id:
+            self.logger.warning("Selected item has no model ID")
+            QMessageBox.warning(self, "Invalid Selection", "The selected item does not have a valid model ID.")
+            return
         
-        if confirm != QMessageBox.Yes:
+        self.logger.info(f"Starting download for model: {model_id}")
+        
+        # Check if HuggingFaceManager is initialized
+        if not hasattr(self, 'huggingface_manager'):
+            from utils.huggingface_manager import HuggingFaceManager
+            from utils.data_paths import get_models_dir
+            models_dir = get_models_dir()
+            self.huggingface_manager = HuggingFaceManager(models_dir=models_dir)
+            self.logger.info(f"Initialized HuggingFaceManager with models_dir: {models_dir}")
+        
+        # Check if model info exists
+        models = self.huggingface_manager.list_available_models(include_trending=True)
+        if model_id not in models:
+            self.logger.warning(f"Model {model_id} not found in available models")
+            QMessageBox.warning(self, "Model Not Found", f"Could not find model {model_id} in available models.")
             return
         
         # Prepare UI for download
-        self.download_progress.setValue(0)
-        self.download_progress.show()
         self.download_button.setEnabled(False)  # Disable to prevent multiple downloads
+        self.download_button.setText("Downloading...")  # Visual feedback on button
         self.model_status_label.setText(f"Starting download of {model_id}...")
         if self.statusBar() is not None:
             self.show_status_message(f"Downloading {model_id}...")
         
-        # Start download in a background thread
-        import threading
-        download_thread = threading.Thread(
-            target=self._force_download_model_thread,
-            args=(model_id,),
-            daemon=True
-        )
-        download_thread.start()
-
-    def _force_download_model_thread(self, model_id):
-        try:
-            from PyQt5.QtCore import QTimer
+        # Create a thread to avoid blocking UI
+        # Store thread and worker as instance variables to prevent garbage collection
+        if not hasattr(self, 'download_thread'):
+            self.download_thread = None
+        if not hasattr(self, 'download_worker'):
+            self.download_worker = None
             
-            # Show starting message
-            QTimer.singleShot(0, lambda: self.model_status_label.setText(f"Starting download of {model_id}..."))
-            QTimer.singleShot(0, lambda: self.download_progress.setValue(0))
-            QTimer.singleShot(0, lambda: self.download_progress.show())  # Make sure progress bar is visible
+        # Clean up any existing thread before creating a new one
+        if self.download_thread is not None:
+            if self.download_thread.isRunning():
+                self.logger.warning("Previous download thread still running, attempting to stop it")
+                self.download_thread.quit()
+                self.download_thread.wait(3000)  # Wait up to 3 seconds for thread to finish
             
-            # Create a progress callback function that safely updates the UI
-            def progress_callback(percentage):
-                QTimer.singleShot(0, lambda p=percentage: self.download_progress.setValue(p))
-                QTimer.singleShot(0, lambda p=percentage: self.model_status_label.setText(f"Downloading: {p}%"))
-                QTimer.singleShot(0, lambda p=percentage: self.show_status_message(f"Downloading: {p}%"))
+            self.download_thread = None
+            self.download_worker = None
+        
+        # Create a new thread
+        self.download_thread = QThread()
+        
+        # Define worker class to run download in background
+        class DownloadWorker(QObject):
+            finished = pyqtSignal(bool, str)
+            progress = pyqtSignal(int)
+            log = pyqtSignal(str)
             
-            # Simply call the direct download method
-            self.logger.info(f"Starting direct download for {model_id} using simple_download_model")
-            success, result = self.huggingface_manager.simple_download_model(
-                model_id=model_id,
-                progress_callback=progress_callback
-            )
+            def __init__(self, model_id, huggingface_manager):
+                super().__init__()
+                self.model_id = model_id
+                self.huggingface_manager = huggingface_manager
+                
+            def run(self):
+                try:
+                    self.log.emit(f"Download thread started for {self.model_id}")
+                    
+                    # Show starting message
+                    self.progress.emit(0) # Signal 0% progress
+                    
+                    # Create a progress callback function that updates status text and logs at key intervals
+                    def progress_callback(percentage):
+                        self.progress.emit(percentage)  # Update UI via signal
+                    
+                    # Start the download with detailed logging
+                    self.log.emit(f"INITIATING DOWNLOAD FOR MODEL: {self.model_id}")
+                    success, result = self.huggingface_manager.simple_download_model(
+                        model_id=self.model_id,
+                        progress_callback=progress_callback
+                    )
+                    
+                    self.log.emit(f"Download thread completed for {self.model_id}, success={success}")
+                    self.finished.emit(success, result)
+                    
+                except Exception as e:
+                    import traceback
+                    self.log.emit(f"Error in download thread: {str(e)}")
+                    self.log.emit(traceback.format_exc())
+                    # Signal completion with error
+                    self.finished.emit(False, f"Error: {str(e)}")
+        
+        # Create worker and connect signals
+        self.download_worker = DownloadWorker(model_id, self.huggingface_manager)
+        self.download_worker.moveToThread(self.download_thread)
+        
+        # Connect thread start to worker's run method
+        self.download_thread.started.connect(self.download_worker.run)
+        
+        # Connect log messages
+        self.download_worker.log.connect(lambda msg: self.logger.info(msg))
+        
+        # Connect progress updates
+        def handle_progress(percentage):
+            # Update status label for all progress updates
+            self.model_status_label.setText(f"Downloading: {percentage}%")
             
+            # Only update status bar at 10% intervals for cleaner UI
+            if percentage == 0 or percentage == 100 or percentage % 10 == 0:
+                self.show_status_message(f"Downloading: {percentage}%")
+                # Log visibly at these points
+                self.logger.info(f"Download progress for {model_id}: {percentage}%")
+            
+            # When download reaches 100%, ensure immediate UI update
+            if percentage == 100:
+                self.logger.info(f"Download reached 100% for model {model_id}")
+                # Reset UI state immediately after download is finished
+                self.download_button.setText("Redownload")
+                self.download_button.setEnabled(True)
+                
+        self.download_worker.progress.connect(handle_progress)
+        
+        # When thread is done, process results
+        def process_result(success, result):
             if success:
-                import os
                 output_path = result
-                size_mb = os.path.getsize(output_path) / (1024 * 1024) if os.path.exists(output_path) else 0
-                success_message = f"Successfully downloaded {model_id} ({size_mb:.1f} MB)"
-                QTimer.singleShot(0, lambda: self.download_progress.setValue(100))
-                QTimer.singleShot(0, lambda: self._handle_download_complete(True, success_message, model_id))
+                self._handle_download_complete(True, result, model_id)
             else:
                 error_message = result
-                QTimer.singleShot(0, lambda: self._handle_download_complete(False, error_message, model_id))
-                
-        except Exception as e:
-            import traceback
-            error_details = traceback.format_exc()
-            self.logger.error(f"Download thread error: {str(e)}\n{error_details}")
-            from PyQt5.QtCore import QTimer
-            QTimer.singleShot(0, lambda: self._handle_download_complete(False, str(e), model_id))
-
-    def download_model_direct(self, model_id, progress_callback=None):
-        """Simpler direct download method"""
-        from huggingface_hub import hf_hub_download
-        
-        available_models = self.list_available_models()
-        if model_id not in available_models:
-            return False, f"Model {model_id} not found"
-        
-        model_info = available_models[model_id]
-        
-        try:
-            # Direct download
-            output_path = hf_hub_download(
-                repo_id=model_info["repo_id"],
-                filename=model_info["filename"],
-                local_dir=self.models_dir,
-                resume_download=True
-            )
+                self._handle_download_complete(False, error_message, model_id)
             
-            return True, output_path
-        except Exception as e:
-            return False, str(e)
+            # Explicitly clean up thread references after completion
+            self.download_thread = None
+            self.download_worker = None
+        
+        self.download_worker.finished.connect(process_result)
+        
+        # Handle thread finish (connect these AFTER process_result to ensure they run last)
+        self.download_worker.finished.connect(self.download_thread.quit)
+        self.download_thread.finished.connect(lambda: self.logger.info("Download thread finished and resources released"))
+        
+        # Start the thread
+        self.download_thread.start()
+        self.logger.info(f"Download thread started for {model_id}")
     
     def debug_model_status(self):
         """Print detailed debugging info about model status"""
@@ -1829,21 +2032,32 @@ class LocalAIApp(QMainWindow):
         self.logger.info("Restarting application after model download...")
         
         # Save any important state
-        self.save_settings()
-        
-        # Close the current instance
-        self.close()
-        
-        # Start a new process
-        import sys
-        import subprocess
-        
-        # Get the current executable path
-        python = sys.executable
-        script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "gui_app.py")
-    
-        # Launch a new instance
-        subprocess.Popen([python, script])
+        try:
+            # Save settings before exiting
+            self.save_settings()
+            self.save_llamacpp_settings()
+            
+            # Get the current executable path
+            import sys
+            import os
+            import subprocess
+            
+            python = sys.executable
+            script = os.path.join(os.path.dirname(os.path.dirname(__file__)), "gui_app.py")
+            
+            # Launch a new instance
+            self.logger.info(f"Launching new instance: {python} {script}")
+            subprocess.Popen([python, script])
+            
+            # Exit the current instance after a slight delay
+            def exit_app():
+                QApplication.quit()
+            
+            QTimer.singleShot(500, exit_app)
+            
+        except Exception as e:
+            self.logger.error(f"Failed to restart application: {str(e)}")
+            QMessageBox.critical(self, "Error", f"Failed to restart: {str(e)}")
     
     def debug_trending_models_api(self):
         """Debug trending models API issues"""
@@ -1958,7 +2172,7 @@ class LocalAIApp(QMainWindow):
         self.logger.info("Starting model loading diagnostics...")
         
         if self.backend == "ollama":
-            QMessageBox.information(self, "Ollama Diagnostics", "Ollama models are managed by Ollama service.")
+            QMessageBox.information(self, "Ollama Diagnostics", "Olloma models are managed by Olloma service.")
             return
         
         # Get selected model or use current model
@@ -1994,30 +2208,211 @@ class LocalAIApp(QMainWindow):
             self.logger.error(f"Error in diagnostics: {str(e)}")
             QMessageBox.warning(self, "Diagnostic Error", f"Error running diagnostics: {str(e)}")
 
+    def restart_llamacpp(self):
+        """Restart the llama-cpp backend to detect new models"""
+        self.logger.info("Restarting llama-cpp backend to detect new models...")
+        
+        try:
+            # Remember current model
+            previous_model = self.current_model
+            
+            # First, make sure any loaded model is unloaded
+            if hasattr(self.llamacpp_client, 'loaded_model') and self.llamacpp_client.loaded_model:
+                self.logger.info("Unloading current model...")
+                model_path = self.llamacpp_client.model_path
+                # Release model and memory
+                del self.llamacpp_client.loaded_model
+                self.llamacpp_client.loaded_model = None
+                self.llamacpp_client.model_path = None
+                gc.collect()  # Force garbage collection
+                self.logger.info(f"Successfully unloaded model from {model_path}")
+            
+            # Get current settings before reinitializing
+            current_ctx = getattr(self.llamacpp_client, 'n_ctx', 4096)
+            current_gpu_layers = getattr(self.llamacpp_client, 'n_gpu_layers', 0)
+            
+            # Create a new instance of LlamaCppClient
+            self.logger.info(f"Creating new LlamaCppClient with n_ctx={current_ctx}, n_gpu_layers={current_gpu_layers}")
+            self.llamacpp_client = LlamaCppClient(n_ctx=current_ctx, n_gpu_layers=current_gpu_layers)
+            
+            # Log the models path being used
+            from utils.data_paths import get_models_dir
+            models_dir = get_models_dir()
+            self.logger.info(f"Newly restarted LlamaCppClient will search for models in: {models_dir}")
+            
+            # Update the client reference in the model manager
+            if hasattr(self, 'model_manager'):
+                self.model_manager.llamacpp_client = self.llamacpp_client
+                self.logger.info("Updated model_manager's LlamaCppClient reference")
+            
+            # Update the client reference if needed
+            if self.backend == "integrated":
+                self.client = self.llamacpp_client
+                self.logger.info("Updated integrated backend client reference")
+            
+            # Refresh model lists and UI
+            self.update_model_list()
+            
+            # Auto-load the current model after restart with extra verification
+            if previous_model:
+                self.logger.info(f"Attempting to reload model '{previous_model}' after restart")
+                try:
+                    # Try up to 3 times to ensure model loads properly
+                    max_attempts = 3
+                    for attempt in range(1, max_attempts + 1):
+                        self.logger.info(f"Model reload attempt {attempt}/{max_attempts}")
+                        
+                        # Force clean previous attempts
+                        if attempt > 1 and hasattr(self.llamacpp_client, 'loaded_model'):
+                            if self.llamacpp_client.loaded_model:
+                                del self.llamacpp_client.loaded_model
+                                self.llamacpp_client.loaded_model = None
+                            gc.collect()
+                            time.sleep(0.5)  # Brief pause between attempts
+                        
+                        if self.llamacpp_client.switch_model(previous_model):
+                            self.logger.info(f"Successfully reloaded model '{previous_model}' after restart")
+                            self.current_model = previous_model
+                            
+                            # Verify model is actually loaded
+                            is_healthy = self.llamacpp_client.health()
+                            self.logger.info(f"Health check after reload: {is_healthy}")
+                            if is_healthy:
+                                break
+                            else:
+                                self.logger.warning("Model reported loaded but failed health check")
+                        else:
+                            self.logger.warning(f"Failed to reload model '{previous_model}' - attempt {attempt}")
+                            
+                    # If we couldn't load the model after multiple attempts, log an error
+                    if not getattr(self.llamacpp_client, 'loaded_model', None):
+                        self.logger.error(f"Could not reload model '{previous_model}' after multiple attempts")
+                except Exception as load_error:
+                    self.logger.error(f"Error during model reload: {str(load_error)}")
+            
+            self.logger.info("LlamaCpp backend restarted successfully")
+            return True
+        
+        except Exception as e:
+            self.logger.error(f"Failed to restart llama-cpp backend: {str(e)}")
+            return False
+
     def _handle_download_complete(self, success, message, model_id):
         """Handle completion of model download with proper UI updates"""
-        self.download_progress.hide()
-        self.download_button.setEnabled(True)
-        
+        # Button state should already be updated in the download thread
+        self.logger.info(f"Processing download completion for {model_id}, success={success}")
+            
         if success:
+            self.logger.info(f"Download complete for {model_id}: {message}")
+            
             if self.statusBar() is not None:
                 self.show_status_message(f"Download complete: {model_id}")
-            self.model_status_label.setText(message)
+                
+            if hasattr(self, 'model_status_label'):
+                # Clear the "Downloading..." message
+                self.model_status_label.setText(f"Download complete: {model_id}")
+                
+                # Set a timer to clear the status after 5 seconds
+                QTimer.singleShot(5000, lambda: self.model_status_label.setText(""))
             
             # Show success message
             QMessageBox.information(self, "Download Complete", message)
             
-            # Refresh model lists
+            # CRITICAL: Before refreshing UI, restart llama-cpp to detect new models
+            self.restart_llamacpp()
+            
+            # CRITICAL: Refresh the model lists to ensure the new model is available
+            self.logger.info("Refreshing model lists after download")
             self.load_available_models()
             
-            # Update the model list in the top right
+            # Update the model list in the top right combobox 
+            self.logger.info("Updating model dropdown in UI")
             self.update_model_list()
             
+            # Auto-select the downloaded model in the available models list
+            self.logger.info(f"Auto-selecting model {model_id} in available models list")
+            self.select_model_by_id(model_id)
+            
+            # CRITICAL: Auto-mount the model by selecting it in the model combobox
+            if hasattr(self, 'model_combo'):
+                self.logger.info(f"Attempting to auto-mount downloaded model {model_id}")
+                
+                # Get the simplified model ID that would be used by llamacpp_client
+                simplified_model_id = self._get_simplified_model_id(model_id)
+                
+                # First try exact match
+                index = self.model_combo.findData(model_id)
+                # Then try with simplified ID
+                if index < 0:
+                    index = self.model_combo.findData(simplified_model_id)
+                # Try alternative ways to find the model by text 
+                if index < 0:
+                    for i in range(self.model_combo.count()):
+                        item_text = self.model_combo.itemText(i)
+                        if model_id.lower() in item_text.lower() or simplified_model_id.lower() in item_text.lower():
+                            index = i
+                            break
+                
+                if index >= 0:
+                    self.logger.info(f"Found model {model_id} at index {index}, auto-mounting...")
+                    self.model_combo.setCurrentIndex(index)
+                    # This will trigger on_model_changed
+                else:
+                    # If we couldn't find the model in the combobox, try refreshing again
+                    self.logger.warning(f"Could not find model {model_id} in combobox, refreshing model list again")
+                    # Force another update of the model list
+                    self.update_model_list()
+                    
+                    # Try to find the model again
+                    index = self.model_combo.findData(model_id)
+                    if index >= 0:
+                        self.model_combo.setCurrentIndex(index)
+                        self.logger.info(f"Found model {model_id} after refresh, auto-mounting...")
+                    else:
+                        self.logger.warning(f"Still could not find model {model_id} in combobox after refresh")
+            else:
+                self.logger.warning("No model combobox found, cannot auto-mount model")
+            
+            # Make sure the download button state is properly updated
+            self.update_download_button_state()
         else:
+            # Handle failure case
+            self.logger.error(f"Download failed for {model_id}: {message}")
+            
             if self.statusBar() is not None:
                 self.show_status_message(f"Download failed: {model_id}")
-            self.model_status_label.setText(f"Download failed: {message}")
+                
+            if hasattr(self, 'model_status_label'):
+                self.model_status_label.setText(f"Download failed: {message}")
+                
+                # Clear the error message after 10 seconds
+                QTimer.singleShot(10000, lambda: self.model_status_label.setText(""))
+                
             QMessageBox.critical(self, "Download Failed", f"Failed to download {model_id}:\n{message}")
+            
+            # Still refresh the model list just in case partial download happened
+            self.load_available_models()
+            self.update_model_list()
+            self.update_download_button_state()
+            
+    def select_model_by_id(self, model_id):
+        """Select a model in the available models list by its ID"""
+        if not model_id:
+            return
+            
+        self.logger.info(f"Auto-selecting model {model_id} in the available models list")
+        
+        # Find and select the model in the list
+        for i in range(self.available_models_list.count()):
+            item = self.available_models_list.item(i)
+            if item and item.data(Qt.ItemDataRole.UserRole) == model_id:
+                self.available_models_list.setCurrentItem(item)
+                # Ensure the item is visible
+                self.available_models_list.scrollToItem(item)
+                return True
+                
+        self.logger.warning(f"Could not find model {model_id} in the available models list")
+        return False
 
     def _map_filename_to_model_id(self, filename):
         """Map a filename to a model ID for display in the model selector"""
@@ -2228,7 +2623,7 @@ class LocalAIApp(QMainWindow):
                 
             # Save settings to file
             import json
-            settings_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "settings.json")
+            settings_path = get_settings_path()  # Use our utility function
             
             # Load existing settings if available
             try:
@@ -2257,16 +2652,31 @@ class LocalAIApp(QMainWindow):
         except Exception as e:
             self.logger.exception("Error saving LlamaCpp settings")
             self.show_status_message(f"Error saving LlamaCpp settings: {str(e)}", 3000)
-    
-def main():
-    """Main entry point for the application"""
-    import sys
-    from PyQt5.QtWidgets import QApplication
-    
-    app = QApplication(sys.argv)
-    window = LocalAIApp()
-    window.show()
-    sys.exit(app.exec_())
 
-if __name__ == "__main__":
-    main()
+    def _get_simplified_model_id(self, model_id):
+        """Convert a model ID to its simplified form for better matching with LlamaCppClient's auto-detected IDs.
+        For example, 'llama2-7b-chat' would convert to 'llama' to match what LlamaCppClient detects from filenames."""
+        # Common model name prefixes
+        prefixes = {
+            "llama2": "llama",
+            "mistral": "mistral",
+            "phi3": "phi",
+            "tinyllama": "tinyllama",
+            "qwen": "qwen"
+        }
+        
+        # Try to match the beginning of the model_id to known prefixes
+        for prefix, simplified in prefixes.items():
+            if model_id.lower().startswith(prefix.lower()):
+                self.logger.debug(f"Simplified model ID from {model_id} to {simplified}")
+                return simplified
+                
+        # If no known prefix is found, take the part before any dash or digit
+        match = re.match(r'^([a-zA-Z]+)', model_id)
+        if match:
+            simplified = match.group(1).lower()
+            self.logger.debug(f"Using regex to simplify model ID from {model_id} to {simplified}")
+            return simplified
+            
+        # Fallback to the original ID
+        return model_id

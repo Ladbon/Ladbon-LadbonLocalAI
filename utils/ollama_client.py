@@ -4,6 +4,8 @@ import base64
 from utils.logger import setup_logger
 import traceback
 from typing import Optional
+import shutil
+import sys # Importing sys here
 
 # Create a logger for this module
 logger = setup_logger('ollama_client')
@@ -21,21 +23,59 @@ class OllamaClient:
         else:
             self.address = address
         
+        # Ensure Ollama is in PATH
+        self._ensure_ollama_in_path()
+        
         # Only check connection if explicitly requested
         if connect_on_init:
             self.health(show_error=False)
 
+    def _ensure_ollama_in_path(self):
+        """Ensure ollama.exe is in PATH, try common install locations if not."""
+        ollama_name = "ollama.exe" if os.name == "nt" else "ollama"
+        if shutil.which(ollama_name):
+            logger.info(f"Ollama binary found in PATH: {shutil.which(ollama_name)}")
+            return
+        # Try common install locations
+        possible_dirs = [
+            os.path.expandvars(r"%ProgramFiles%\\Ollama"),
+            os.path.expandvars(r"%ProgramFiles(x86)%\\Ollama"),
+            os.path.expandvars(r"%LocalAppData%\\Programs\\Ollama"),
+            os.path.expanduser(r"~\\AppData\\Local\\Programs\\Ollama"),
+            os.path.expanduser(r"~/.ollama"),
+            os.path.dirname(sys.executable),
+        ]
+        for d in possible_dirs:
+            candidate = os.path.join(d, ollama_name)
+            if os.path.isfile(candidate):
+                os.environ["PATH"] = d + os.pathsep + os.environ.get("PATH", "")
+                logger.info(f"Added Ollama binary directory to PATH: {d}")
+                return
+        logger.warning("Ollama binary not found in PATH or common locations. Please install Ollama and ensure it is in your PATH.")
+
     def health(self, show_error=True) -> bool:
-        logger.debug(f"Checking Ollama health at {self.address}/api/tags")
         """Check if Ollama is running, with optional error suppression"""
+        logger.debug(f"Checking Ollama health at {self.address}/api/tags")
         try:
-            response = requests.get(f"{self.address}/api/tags")
+            # Added short timeout to prevent long hangs when Ollama is not running
+            response = requests.get(f"{self.address}/api/tags", timeout=2.0)
             if response.status_code == 200:
+                # Successfully connected to Ollama
                 logger.info("Ollama health check successful.")
-                return True
+                
+                # Verify we can get a list of models as an additional health check
+                model_list = self.list_models()
+                if model_list:
+                    logger.info(f"Ollama has {len(model_list)} models available.")
+                    return True
+                else:
+                    if show_error:
+                        logger.warning("Ollama responded but no models are available.")
+                    # Still consider healthy even if no models, since Ollama itself is running
+                    return True
             else:
                 if show_error:
-                    print(f"❌ Ollama returned status code: {response.status_code}")
+                    logger.error(f"❌ Ollama returned status code: {response.status_code}")
                 return False
         except requests.exceptions.ConnectionError as e:
             if show_error:
@@ -43,7 +83,7 @@ class OllamaClient:
             return False
         except Exception as e:
             if show_error:
-                print(f"❌ Error connecting to Ollama: {str(e)}")
+                logger.error(f"❌ Error connecting to Ollama: {str(e)}")
             return False
             
     def generate(self, model: str, prompt: str, max_tokens: int = 8000, timeout: Optional[int] = None, options: Optional[dict] = None) -> str:
@@ -319,15 +359,18 @@ class OllamaClient:
             logger.error(error_trace)
             return f"Error processing image: {str(e)}"
     def ensure_ollama_installed(self):
-        """Check if Ollama is installed on the system"""
+        """Check if Ollama is installed on the system, with improved error reporting."""
         import subprocess
-        import sys
-        
+        self._ensure_ollama_in_path()
         try:
-            subprocess.run(["ollama", "version"], 
-                          stdout=subprocess.PIPE, 
-                          stderr=subprocess.PIPE)
-            return True
+            result = subprocess.run(["ollama", "version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            if result.returncode == 0:
+                return True
+            else:
+                logger.error(f"Ollama found but failed to run: {result.stderr.decode(errors='ignore')}")
+                print("❌ Ollama is installed but failed to run. Check your installation.")
+                return False
         except FileNotFoundError:
-            print("❌ Ollama is not installed. Please install from https://ollama.ai/download")
+            logger.error("Ollama is not installed or not found in PATH.")
+            print("❌ Ollama is not installed. Please install from https://ollama.ai/download and ensure it is in your PATH.")
             return False

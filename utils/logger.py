@@ -3,10 +3,19 @@ import sys
 import logging
 import datetime
 
+def get_logs_dir():
+    """Get the logs directory, accounting for circular imports"""
+    try:
+        from utils.data_paths import get_logs_dir as get_logs_dir_from_utility
+        return get_logs_dir_from_utility()
+    except (ImportError, ModuleNotFoundError):
+        # Fallback to local directory if data_paths isn't available
+        return os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+
 def setup_logger(name='localai'):
     """Set up and return a logger that writes to both a file and the console"""
     # Create logs directory if it doesn't exist
-    logs_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs")
+    logs_dir = get_logs_dir()
     os.makedirs(logs_dir, exist_ok=True)
     
     # Create a logger

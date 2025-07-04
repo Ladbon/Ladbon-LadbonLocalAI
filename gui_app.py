@@ -1,5 +1,5 @@
-import sys
 import os
+import sys
 
 # Add parent directory to path to ensure the relative import works
 parent_dir = os.path.dirname(os.path.abspath(__file__))
@@ -14,6 +14,24 @@ try:
 except Exception as e:
     # We can't use logger here yet, so use simple print
     print(f"Warning: Failed to initialize onefile loader: {e}")
+
+# Load DLLs for llama-cpp-python before anything else
+try:
+    # Check for CPU-only mode environment variable
+    force_cpu = os.environ.get('FORCE_CPU_ONLY') == '1'
+    if force_cpu:
+        print("CPU-only mode requested by environment variable")
+    
+    # Initialize with appropriate mode
+    from utils.llamacpp_loader import setup_llamacpp_environment
+    cuda_success = setup_llamacpp_environment(force_cpu=force_cpu)
+    
+    if cuda_success:
+        print("Successfully initialized llama-cpp with CUDA support")
+    else:
+        print("Using CPU-only mode for llama-cpp (no CUDA)")
+except Exception as dll_error:
+    print(f"Warning: Failed to initialize llama-cpp environment: {dll_error}")
 
 # Import and apply NumPy fixes before any other imports
 # This needs to be at the very top before anything else runs
@@ -30,8 +48,21 @@ import logging
 import traceback
 import ctypes
 
-# Configure logging to file and console
-log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+# Import our data paths utility
+try:
+    from utils.data_paths import get_logs_dir, first_run_migration
+
+    # Check for first run and migrate data if needed
+    first_run_migration()
+    
+    # Get the logs directory
+    log_dir = get_logs_dir()
+except Exception as e:
+    # If the import fails, fall back to local logs directory
+    print(f"Warning: Failed to import data_paths utility: {e}")
+    log_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'logs')
+
+# Ensure logs directory exists
 os.makedirs(log_dir, exist_ok=True)
 
 # Create a timestamp for the log file
@@ -211,5 +242,38 @@ def main():
         return 1
 
 if __name__ == "__main__":
+    # First run the environment check
+    try:
+        from utils.check_environment import verify_environment
+        env_results = verify_environment()
+        
+        # Log environment information
+        logger.info(f"Python version: {env_results['python_version']}")
+        logger.info(f"Running as: {'64-bit' if env_results['is_64bit_python'] else '32-bit'} Python")
+        
+        # Check for critical issues
+        critical_issues = [issue for issue in env_results.get('issues', []) if "CRITICAL" in issue]
+        if critical_issues:
+            logger.error("CRITICAL ENVIRONMENT ISSUES DETECTED:")
+            for issue in critical_issues:
+                logger.error(f" - {issue}")
+                
+            # Show error dialog if running in GUI mode
+            if not sys.stdout.isatty():  # Check if running with GUI (not in terminal)
+                from PyQt5.QtWidgets import QMessageBox, QApplication
+                app = QApplication(sys.argv)
+                msg = QMessageBox()
+                msg.setIcon(QMessageBox.Critical)
+                msg.setWindowTitle("Environment Error")
+                msg.setText("Critical issues detected with your environment")
+                msg.setInformativeText("\n".join(critical_issues))
+                msg.setDetailedText("Please reinstall the application using the latest installer, "
+                                    "which will ensure it runs in 64-bit mode. "
+                                    "If issues persist, contact support.")
+                msg.exec_()
+                sys.exit(1)
+    except Exception as e:
+        logger.error(f"Failed to run environment check: {e}")
+    
     logger.info("Starting main application (gui_app.py)...") 
     sys.exit(main())

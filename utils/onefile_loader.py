@@ -10,14 +10,40 @@ import logging
 import shutil
 from datetime import datetime
 
+from utils.data_paths import get_logs_dir
+
 # Import type stubs to silence IDE warnings about PyInstaller specific attributes
 try:
     import pyinstaller_types  # type: ignore # noqa
 except ImportError:
     pass  # Will be absent at runtime in bundle
 
-# Set up logging
-log_file = os.path.join(os.getcwd(), f"onefile_loader_{datetime.now().strftime('%Y%m%d-%H%M%S')}.log")
+# Get the appropriate logs directory based on whether we're in a PyInstaller bundle
+def get_logs_dir():
+    # Check if we're running in a PyInstaller bundle
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        # We're running in a bundled app
+        if os.name == 'nt':  # Windows
+            app_data = os.path.join(os.environ['LOCALAPPDATA'], "Ladbon AI Desktop")
+            logs_dir = os.path.join(app_data, "logs")
+        else:  # macOS, Linux, etc.
+            home = os.path.expanduser("~")
+            if os.name == 'posix' and sys.platform == 'darwin':  # macOS
+                app_data = os.path.join(home, "Library", "Application Support", "Ladbon AI Desktop")
+            else:  # Linux and others
+                app_data = os.path.join(home, ".local", "share", "Ladbon AI Desktop")
+            logs_dir = os.path.join(app_data, "logs")
+    else:
+        # During development
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        logs_dir = os.path.join(base_dir, "logs")
+    
+    # Ensure logs directory exists
+    os.makedirs(logs_dir, exist_ok=True)
+    return logs_dir
+
+# Set up logging to the logs directory
+log_file = os.path.join(get_logs_dir(), f"onefile_loader_{datetime.now().strftime('%Y%m%d-%H%M%S')}.log")
 
 def setup_logging():
     """Setup basic logging for this module"""

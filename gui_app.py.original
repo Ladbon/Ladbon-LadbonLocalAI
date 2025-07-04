@@ -1,0 +1,81 @@
+import sys
+import os
+import ctypes
+from PyQt5.QtWidgets import QApplication
+from api.app import LocalAIApp
+import logging
+import importlib
+
+# Set up logging
+logging.basicConfig(level=logging.INFO, 
+                   format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('gui_app')
+
+def patch_llamacpp_backend():
+    """
+    Patch llama-cpp-python backend initialization to handle API changes between versions
+    """
+    try:
+        import llama_cpp
+        
+        # Store original function if it exists
+        original_backend_init = getattr(llama_cpp, 'llama_backend_init', None)
+        
+        # Check if the _lib attribute exists
+        if not hasattr(llama_cpp, '_lib'):
+            logger.warning("llama_cpp module does not have _lib attribute")
+            return False
+            
+        # Check if there's a backend init function to patch
+        if not hasattr(llama_cpp._lib, 'llama_backend_init'):
+            logger.warning("llama_cpp._lib does not have llama_backend_init")
+            return False
+            
+        # Set proper argument types
+        llama_cpp._lib.llama_backend_init.argtypes = [ctypes.c_bool]
+        llama_cpp._lib.llama_backend_init.restype = None
+        
+        # Create patched function
+        def _patched_backend_init(numa: bool = False):
+            """Patched backend init function to handle API changes"""
+            logger.debug(f"Calling patched llama_backend_init with numa={numa}")
+            return llama_cpp._lib.llama_backend_init(ctypes.c_bool(numa))
+        
+        # Label it for detection
+        _patched_backend_init.__name__ = '_patched_backend_init'
+        
+        # Apply the patch
+        llama_cpp.llama_backend_init = _patched_backend_init
+        
+        # Test if it works
+        try:
+            llama_cpp.llama_backend_init(False)
+            logger.info("Successfully patched and tested llama_backend_init")
+            return True
+        except Exception as e:
+            logger.error(f"Error testing patched backend init: {e}")
+            # Restore original if needed
+            if original_backend_init is not None:
+                llama_cpp.llama_backend_init = original_backend_init
+            return False
+            
+    except ImportError as e:
+        logger.error(f"Cannot import llama_cpp: {e}")
+        return False
+    except Exception as e:
+        logger.error(f"Error patching llama_cpp backend: {e}")
+        return False
+
+def main():
+    # Apply the patch before importing/initializing anything else
+    patch_result = patch_llamacpp_backend()
+    logger.info(f"LLM backend patch applied: {patch_result}")
+    
+    # Initialize the application
+    app = QApplication(sys.argv)
+    window = LocalAIApp()
+    window.show()
+    sys.exit(app.exec_())
+
+if __name__ == "__main__":
+    main()

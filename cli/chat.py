@@ -1,16 +1,24 @@
 import sys, os, time
 from typing import List, Dict, Optional
 from utils.ollama_client import OllamaClient
+import logging
+
+# Set up logging
+logger = logging.getLogger('chat_session')
 
 class ChatSession:
     def __init__(self, client: OllamaClient, model: str = "qwen3:8b", 
-         max_tokens: int = 10000, timeout: int = 0, system_prompt: Optional[str] = None):
+         max_tokens: int = 10000, timeout: int = 0, system_prompt: Optional[str] = None,
+         force_cpu_only: bool = False):
         self.client = client
         self.model = model
         self.max_tokens = max_tokens
         self.timeout = timeout
         self.system_prompt = system_prompt
+        self.force_cpu_only = force_cpu_only
         self.history: List[Dict[str, str]] = []
+        
+        logger.info(f"Initializing ChatSession with model={model}, max_tokens={max_tokens}, force_cpu_only={force_cpu_only}")
         
         # Check Ollama availability
         if not client.health():
@@ -22,17 +30,28 @@ class ChatSession:
         print(f"✓ Connected to Ollama with model: {model}")
     
     def _ensure_ollama(self):
-        """Attempt to start the Ollama service if it's not running"""
+        """Attempt to start the Ollama service if it's not running, with improved feedback"""
         import subprocess
         import time
-        
+        from utils.ollama_client import OllamaClient
+        client = self.client
+        # Try to ensure Ollama is installed and in PATH
+        if not client.ensure_ollama_installed():
+            print("❌ Ollama is not installed or not found in PATH. Please install it and try again.")
+            return
         # Kill any existing processes
-        subprocess.run(["taskkill", "/F", "/IM", "ollama.exe"], 
-                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
+        subprocess.run(["taskkill", "/F", "/IM", "ollama.exe"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         # Start Ollama
-        subprocess.Popen(["ollama", "serve"], shell=True)
-        time.sleep(5)  # Wait for startup
+        try:
+            proc = subprocess.Popen(["ollama", "serve"], shell=True)
+            print("✓ Ollama server starting...")
+            time.sleep(5)  # Wait for startup
+            if proc.poll() is not None:
+                print("❌ Ollama server failed to start. Check your installation and logs.")
+            else:
+                print("✓ Ollama server started.")
+        except Exception as e:
+            print(f"❌ Failed to start Ollama: {e}")
     
     def menu(self) -> str:
         """Display menu and get user choice"""

@@ -6,6 +6,7 @@ A desktop application for interacting with AI models through both local GGUF mod
 
 - **Dual Model Support**: Use local GGUF models or Ollama models
 - **Local Inference**: Run AI models directly on your computer with llama-cpp-python
+- **GPU Acceleration**: CUDA support for faster inference with NVIDIA GPUs
 - **HuggingFace Integration**: Download models directly from HuggingFace
 - **Multi-Model Support**: Compatible with Llama, Mistral, Qwen, LLaVA, Gemma, Phi-3, and DeepSeek models
 - **Document Analysis**: Process PDFs, TXT, and Word documents
@@ -32,15 +33,25 @@ pytesseract>=0.3.9
 huggingface_hub>=0.16.0
 tqdm>=4.65.0
 psutil>=5.9.0
-llama-cpp-python==0.3.9 (installed separately)
+llama-cpp-python==0.3.9 (for GPU support) or llama-cpp-python==0.3.9+cpu (for CPU-only)
 ```
+
+### Hardware Requirements
+
+- **CPU**: Minimum 4 cores (8+ recommended for local inference)
+- **RAM**: Minimum 8GB (16GB+ recommended for larger models)
+- **Disk Space**: 1GB for application + space for models (models can range from 500MB to 20GB+)
+- **GPU (optional)**: NVIDIA GPU with CUDA support (8GB+ VRAM recommended)
+  - **Compatible CUDA versions**: 12.9 (recommended), 12.0
+  - **Supported architectures**: Ampere, Ada, Hopper (RTX 30-series, 40-series, A-series)
 
 ## Installation
 
 ### Prerequisites
 
 1. **Install Python 3.8+** if not already installed (only needed if running from source)
-2. **Optional: Install Ollama** from [ollama.com/download](https://ollama.com/download) if you want to use Ollama models in addition to local GGUF models
+2. **Optional: Install CUDA** for GPU acceleration (recommended: CUDA 12.9)
+3. **Optional: Install Ollama** from [ollama.com/download](https://ollama.com/download) if you want to use Ollama models in addition to local GGUF models
 
 ### Option 1: Windows Installer (Recommended)
 
@@ -76,7 +87,7 @@ llama-cpp-python==0.3.9 (installed separately)
    cd src
    python install_llamacpp.py
    
-   # For CPU-only support:
+   # For CPU-only support (more compatible but slower):
    cd src
    python install_cpu_llamacpp.py
    ```
@@ -94,6 +105,14 @@ llama-cpp-python==0.3.9 (installed separately)
 3. Create `docs`, `img`, and `models` subfolders in the same location
 4. Download GGUF models into the `models` folder (optional, for local inference)
 5. Run `Ladbon AI Desktop.exe`
+
+#### CUDA/GPU Support for Portable Executable
+
+If you want GPU acceleration with the portable executable:
+
+1. Make sure CUDA 12.9 (recommended) or compatible version is installed
+2. After downloading the portable app, run `copy_cuda_dlls.bat` to copy CUDA DLLs to the application
+3. Use `Launch_With_CUDA.bat` to start the application with GPU support
 
 ## Usage
 
@@ -145,12 +164,24 @@ To create a standalone executable:
 ```
 cd src
 # First install llama-cpp-python if you want local model support
-python install_llamacpp.py
+python install_llamacpp.py  # for CUDA/GPU support
+# OR
+python install_cpu_llamacpp.py  # for CPU-only support (more compatible)
+
 # Then build the package
 python package.py
 ```
 
 The executable will be created in the `dist` folder. If llama-cpp-python is installed, it will be included in the package, enabling local model support.
+
+#### GPU/CUDA Support in Packaged Application
+
+After building the package, to ensure CUDA support works correctly:
+
+1. Run `copy_cuda_dlls.bat` to copy the required CUDA DLLs to the application
+2. Use `Launch_With_CUDA.bat` to start the application with GPU support
+
+If you encounter "access violation" errors, refer to the `CUDA_SOLUTION_SUMMARY.md` file for detailed fixes.
 
 ### Creating an Installer
 
@@ -176,10 +207,13 @@ The executable will be created in the `dist` folder. If llama-cpp-python is inst
 - **Error loading models**: Check your internet connection
 - **Local model errors**: Run `python test_model_loading.py` to diagnose issues
 - **Slow local inference**: Try using a smaller model or enabling GPU acceleration
+- **"Access violation" errors**: Run `copy_cuda_dlls.bat` and use `Launch_With_CUDA.bat`, or switch to CPU-only mode with `install_cpu_llamacpp.py` and rebuild
 - **llama-cpp-python errors**: Run `python reinstall_llamacpp.py` to reinstall
+- **CUDA not working**: See `CUDA_SOLUTION_SUMMARY.md` for detailed fixes and diagnostics
 - **Image analysis not working**: Verify you've selected a vision-capable model
 - **Slow responses**: Larger models require more processing time and resources
 - **No logs displayed**: Check the `logs` folder to ensure log files are being created
+- **DLL load errors**: Check `%USERPROFILE%\ladbon_ai_hook_debug.log` for details
 
 ## License
 

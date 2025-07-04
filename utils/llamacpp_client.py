@@ -1,5 +1,6 @@
 import os
 import gc
+import sys
 import platform
 import psutil
 import importlib, ctypes # Keep for patch logic if moved here
@@ -13,8 +14,18 @@ except ImportError:
 
 from pathlib import Path
 from utils.logger import setup_logger
+from utils.data_paths import get_models_dir
+from utils.dll_loader import ensure_dlls_loadable
 
 logger = setup_logger('llamacpp_client')
+
+# Try to ensure DLLs are properly loaded at import time
+if platform.system() == "Windows":
+    dll_load_success = ensure_dlls_loadable()
+    if dll_load_success:
+        logger.info("DLL loader pre-initialization successful")
+    else:
+        logger.warning("DLL loader pre-initialization failed - may have issues loading models")
 
 class LlamaCppClient:
     def __init__(self, n_ctx=4096, n_gpu_layers=4): # Accept parameters
@@ -85,8 +96,65 @@ class LlamaCppClient:
     def _safe_init_backend(self):
         """
         Initialize llama-cpp backend safely, compatible with the patch in gui_app.py
+        With enhanced error logging for better DLL debugging
         """
         logger.debug("Entering _safe_init_backend.")
+        
+        # Check system architecture first
+        is_64bit = platform.architecture()[0] == '64bit'
+        logger.info(f"System architecture: {'64-bit' if is_64bit else '32-bit'}")
+        
+        is_python_64bit = sys.maxsize > 2**32
+        logger.info(f"Python interpreter: {'64-bit' if is_python_64bit else '32-bit'}")
+        
+        if not is_python_64bit:
+            logger.error("CRITICAL ERROR: Running in 32-bit Python! llama-cpp-python requires 64-bit Python")
+            return False
+            
+        # First, explicitly force the DLLs to be loaded
+        if platform.system() == "Windows":
+            try:
+                from utils.dll_loader import ensure_dlls_loadable
+                dll_load_result = ensure_dlls_loadable()
+                logger.info(f"DLL pre-loading result: {'Success' if dll_load_result else 'Failed'}")
+            except Exception as e:
+                logger.error(f"Failed to pre-load DLLs: {e}")
+            
+            # Try to log system PATH
+            logger.info(f"Current PATH: {os.environ.get('PATH', 'Not available')}")
+            
+            # Check if we're running from a PyInstaller bundle
+            if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+                logger.info(f"Running from PyInstaller bundle: {getattr(sys, '_MEIPASS', 'Unknown')}")
+                
+                # Check for expected DLL locations in PyInstaller bundle
+                internal_lib_path = os.path.join(os.path.dirname(sys.executable), '_internal', 'llama_cpp', 'lib')
+                if os.path.exists(internal_lib_path):
+                    logger.info(f"Found internal lib directory: {internal_lib_path}")
+                    if os.path.exists(os.path.join(internal_lib_path, 'llama.dll')):
+                        logger.info(f"Found llama.dll in internal lib directory")
+                    else:
+                        logger.error(f"llama.dll NOT FOUND in internal lib directory")
+                else:
+                    logger.error(f"Internal lib directory not found: {internal_lib_path}")
+            
+            # Try to log which DLLs are loaded
+            try:
+                import psutil
+                process = psutil.Process()
+                logger.info("Attempting to list loaded DLLs in current process:")
+                found_llama_dll = False
+                for dll in process.memory_maps():
+                    if '.dll' in dll.path.lower():
+                        logger.info(f"  Loaded DLL: {dll.path}")
+                        if 'llama.dll' in dll.path.lower():
+                            found_llama_dll = True
+                
+                if not found_llama_dll:
+                    logger.error("CRITICAL: llama.dll is not loaded in the current process!")
+            except Exception as e:
+                logger.error(f"Failed to list loaded DLLs: {e}")
+        
         try:
             import llama_cpp
         except ImportError:
@@ -100,15 +168,25 @@ class LlamaCppClient:
                 llama_cpp.llama_backend_init()  # Call with default False argument
                 logger.info("Backend initialized successfully using llama_backend_init")
                 return True
+            except OSError as e:
+                logger.error(f"OSError in llama_backend_init: {e}")
+                if "access violation reading" in str(e):
+                    logger.error("This is likely a DLL loading issue - wrong DLL version or architecture (32/64-bit mismatch)")
+                    logger.error("Make sure you're using 64-bit Python and 64-bit llama-cpp-python")
+                return False
             except Exception as e:
                 logger.error(f"Error calling llama_backend_init: {e}")
+                logger.error(f"Stack trace: {traceback.format_exc()}")
                 return False
         else:
             # Try finding the function in llama_cpp module structure
             try:
+                # Log llama_cpp module structure for debugging
+                logger.info(f"llama_cpp module attributes: {dir(llama_cpp)}")
+                
                 # First try with direct _lib
-                if hasattr(llama_cpp, '_lib') and hasattr(llama_cpp.llama_cpp._lib, 'llama_backend_init'):
-                    lib = llama_cpp.llama_cpp._lib
+                if hasattr(llama_cpp, '_lib') and hasattr(getattr(llama_cpp, '_lib'), 'llama_backend_init'):
+                    lib = getattr(llama_cpp, '_lib')
                     logger.info("Found backend init in llama_cpp._lib")
                 # Then try with nested module
                 elif hasattr(llama_cpp, 'llama_cpp') and hasattr(llama_cpp.llama_cpp, '_lib') and hasattr(llama_cpp.llama_cpp._lib, 'llama_backend_init'):
@@ -124,11 +202,19 @@ class LlamaCppClient:
                 lib.llama_backend_init.restype = None
                 
                 # Call with default argument
-                lib.llama_backend_init(ctypes.c_bool(False))
-                logger.info("Backend initialized successfully using direct _lib call")
-                return True
+                try:
+                    lib.llama_backend_init(ctypes.c_bool(False))
+                    logger.info("Backend initialized successfully using direct _lib call")
+                    return True
+                except OSError as e:
+                    logger.error(f"OSError in direct llama_backend_init call: {e}")
+                    if "access violation reading" in str(e):
+                        logger.error("This is likely a DLL loading issue - wrong DLL version or architecture (32/64-bit mismatch)")
+                        logger.error("Make sure you're using 64-bit Python and 64-bit llama-cpp-python")
+                    return False
             except Exception as e:
                 logger.error(f"Error initializing backend: {e}")
+                logger.error(f"Stack trace: {traceback.format_exc()}")
                 return False
 
     def load_model(self, model_path):
@@ -176,10 +262,56 @@ class LlamaCppClient:
             }
             logger.info(f"Loading model with Llama params: {params}")
             
+            # First check if the llama_cpp DLLs are accessible
+            try:
+                import llama_cpp
+                logger.info(f"llama_cpp module found at: {llama_cpp.__file__}")
+                dll_dir = os.path.join(os.path.dirname(llama_cpp.__file__), 'lib')
+                logger.info(f"llama_cpp library directory should be at: {dll_dir}")
+                if os.path.exists(dll_dir):
+                    logger.info(f"Library directory exists with contents: {os.listdir(dll_dir)}")
+                    # Add DLL directory to path for Windows
+                    if platform.system() == "Windows":
+                        # Try adding the DLL directory to the path
+                        import ctypes
+                        ctypes.cdll.LoadLibrary(os.path.join(dll_dir, "llama.dll"))
+                        logger.info(f"Successfully loaded llama.dll from {dll_dir}")
+                else:
+                    logger.warning(f"Library directory does not exist at {dll_dir}")
+                    # Try to find DLLs in alternative locations
+                    exe_dir = os.path.dirname(sys.executable)
+                    logger.info(f"Checking for DLLs in executable directory: {exe_dir}")
+                    if os.path.exists(exe_dir):
+                        logger.info(f"Executable directory contents: {os.listdir(exe_dir)}")
+            except Exception as e:
+                logger.error(f"Error while checking llama_cpp setup: {e}")
+                logger.error(traceback.format_exc())
+            
             # This is the critical part - let Llama handle its own initialization
-            self.loaded_model = Llama(**params)
-            self.model_path = model_path
-            logger.info(f"Model '{os.path.basename(model_path)}' loaded successfully using Llama class.")
+            try:
+                self.loaded_model = Llama(**params)
+                self.model_path = model_path
+                logger.info(f"Model '{os.path.basename(model_path)}' loaded successfully using Llama class.")
+            except OSError as e:
+                if "access violation reading" in str(e):
+                    logger.error(f"Access violation error in llama_cpp - likely missing or incompatible DLLs: {e}")
+                    # Try to recover by forcing static loading
+                    try:
+                        logger.info("Attempting fallback initialization approach...")
+                        # Force Python to find DLLs in current directory
+                        original_dir = os.getcwd()
+                        os.chdir(os.path.dirname(sys.executable))
+                        logger.info(f"Changed directory to {os.getcwd()} to find DLLs")
+                        self.loaded_model = Llama(**params)
+                        self.model_path = model_path
+                        logger.info(f"Fallback approach successful! Model loaded.")
+                        # Change back to original directory
+                        os.chdir(original_dir)
+                    except Exception as fallback_e:
+                        logger.error(f"Fallback initialization also failed: {fallback_e}")
+                        raise
+                else:
+                    raise
             
             # If the CPU-only load worked and user wanted GPU layers, try again with GPU
             if self.n_gpu_layers > 0:
@@ -253,8 +385,33 @@ class LlamaCppClient:
             self.model_metadata = {"error": "Failed to extract metadata."}
 
     def health(self):
-        is_healthy = self.loaded_model is not None
-        logger.debug(f"Health check: Model loaded = {is_healthy}")
+        # First check if the model object exists
+        is_healthy = hasattr(self, 'loaded_model') and self.loaded_model is not None
+        model_path = getattr(self, 'model_path', None)
+        logger.debug(f"Health check: Model loaded = {is_healthy}, model_path = {model_path}")
+        
+        # Check model path existence and attributes
+        if not is_healthy and model_path and os.path.exists(model_path):
+            logger.warning(f"Model path exists but model not loaded. Attempting to reload from: {model_path}")
+            
+            # Try loading the model with a clean state
+            try:
+                # Clear any partial model state
+                if hasattr(self, 'loaded_model') and self.loaded_model:
+                    del self.loaded_model
+                    self.loaded_model = None
+                    gc.collect()
+                
+                # Try to reload the model
+                is_healthy = self.load_model(model_path)
+                logger.info(f"Reload attempt result: {is_healthy}")
+                
+                # Double-verify the model is now loaded
+                is_healthy = hasattr(self, 'loaded_model') and self.loaded_model is not None
+            except Exception as e:
+                logger.error(f"Error during health check reload: {str(e)}")
+                is_healthy = False
+            
         return is_healthy
 
     def generate(self, prompt, max_tokens=2000, options=None):
@@ -365,10 +522,21 @@ Remember: Only respond to what was actually asked, never make up user messages."
     def list_models(self):
         logger.debug("Listing models from local directories.")
         models = []
+        # Use the utility function to get models directory
+        app_models_dir = get_models_dir()
+        # Legacy paths for backward compatibility
         standard_models_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models")
-        user_models_dir = os.path.join(Path.home(), ".ladbon_ai", "models") # User-specific directory
+        user_models_dir = os.path.join(Path.home(), ".ladbon_ai", "models")
         
-        search_dirs = [standard_models_dir, user_models_dir]
+        # Primary search location is now in AppData
+        search_dirs = [app_models_dir]
+        
+        # Add legacy paths for backward compatibility
+        if app_models_dir != standard_models_dir:  # Only add if they're different
+            search_dirs.append(standard_models_dir)
+        search_dirs.append(user_models_dir)
+        
+        # Add custom path from environment if specified
         if "LADBON_AI_MODELS_PATH" in os.environ:
             env_path = os.environ["LADBON_AI_MODELS_PATH"]
             search_dirs.append(env_path)
@@ -476,27 +644,41 @@ Remember: Only respond to what was actually asked, never make up user messages."
         return True, "Compatibility check passed (basic)."
 
     def switch_model(self, model_id):
-        logger.info(f"Attempting to switch to model ID: {model_id}")
+        """Switch to a specified model by ID"""
+        logger.info(f"Switching to model: {model_id}")
         try:
+            # Primary location: AppData models directory
+            app_models_dir = get_models_dir()
+            
+            # Legacy locations for backward compatibility
             standard_models_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "models")
             user_models_dir = os.path.join(Path.home(), ".ladbon_ai", "models")
-            search_dirs = [standard_models_dir, user_models_dir]
-            if "LADBON_AI_MODELS_PATH" in os.environ:
-                search_dirs.append(os.environ["LADBON_AI_MODELS_PATH"])
-            logger.debug(f"Search directories for model switch: {search_dirs}")
-
-            target_model_path = None
-            for s_dir in search_dirs:
-                path_attempt = self.map_model_to_file(model_id, s_dir)
-                if path_attempt:
-                    target_model_path = path_attempt
-                    logger.info(f"Found model file for ID '{model_id}' at: {target_model_path}")
-                    break
             
+            # First try AppData location
+            target_model_path = self.map_model_to_file(model_id, app_models_dir)
+            
+            # Then try legacy locations if needed
             if not target_model_path:
-                logger.error(f"Could not find a model file for ID '{model_id}' in any search directory.")
-                return False
+                # Search in alternate directories
+                search_dirs = [standard_models_dir, user_models_dir]
                 
+                # Add env var path if specified
+                if "LADBON_AI_MODELS_PATH" in os.environ:
+                    search_dirs.append(os.environ["LADBON_AI_MODELS_PATH"])
+                
+                for s_dir in search_dirs:
+                    path_attempt = self.map_model_to_file(model_id, s_dir)
+                    if path_attempt:
+                        target_model_path = path_attempt
+                        break
+
+            if not target_model_path:
+                logger.error(f"Could not find a model file for model ID: {model_id}")
+                return False
+
+            logger.info(f"Mapped model ID '{model_id}' to file: {target_model_path}")
+            
+            # If we already have this exact model loaded, don't reload it
             if self.loaded_model and self.model_path == target_model_path:
                 logger.info(f"Model '{model_id}' ({target_model_path}) is already loaded. No switch needed.")
                 return True
@@ -504,10 +686,18 @@ Remember: Only respond to what was actually asked, never make up user messages."
             # Unloading is handled by load_model if a model is already loaded.
             logger.info(f"Proceeding to load new model: {target_model_path}")
             success = self.load_model(target_model_path)
+            
+            # Double-check that the model was actually loaded
+            model_actually_loaded = hasattr(self, 'loaded_model') and self.loaded_model is not None
+            if success and not model_actually_loaded:
+                logger.error(f"Model loading reported success but model object is None! Path: {target_model_path}")
+                success = False
+                
             if success:
                 logger.info(f"Successfully switched to and loaded model: {model_id} ({target_model_path})")
             else:
                 logger.error(f"Failed to load model {model_id} ({target_model_path}) during switch operation.")
+                
             return success
             
         except Exception as e:

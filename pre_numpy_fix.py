@@ -9,6 +9,7 @@ import types
 import shutil
 import ctypes
 from datetime import datetime
+import platform
 
 # Import type stubs to silence IDE warnings
 try:
@@ -16,12 +17,45 @@ try:
 except ImportError:
     pass  # Will be absent at runtime in bundle
 
-# Create a debug log file
-debug_log_path = os.path.join(os.getcwd(), f'numpy_hook_{datetime.now().strftime("%Y%m%d-%H%M%S")}.log')
+# --- Start of copied logic from utils.data_paths ---
+# This logic is duplicated here to avoid import issues during the early PyInstaller boot process.
+APP_NAME = "Ladbon AI Desktop"
+
+def get_app_data_dir():
+    """
+    Get the application data directory where user files should be stored.
+    This is a standalone implementation for the PyInstaller runtime hook.
+    """
+    # Check if we're running in a PyInstaller bundle
+    if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
+        if platform.system() == 'Windows':
+            return os.path.join(os.environ['LOCALAPPDATA'], APP_NAME)
+        elif platform.system() == 'Darwin':
+            return os.path.join(os.path.expanduser('~'), 'Library', 'Application Support', APP_NAME)
+        else: # Linux and others
+            return os.path.join(os.path.expanduser('~'), '.local', 'share', APP_NAME)
+    else:
+        # Development mode: use the project root (assuming this script is in the root)
+        return os.path.dirname(os.path.abspath(__file__))
+
+def get_logs_dir():
+    """Get the path to the logs directory, creating it if it doesn't exist."""
+    # In development, create a 'logs' subdirectory in the project root.
+    # In packaged mode, create it inside the app data directory.
+    base_path = get_app_data_dir()
+    logs_path = os.path.join(base_path, 'logs')
+    os.makedirs(logs_path, exist_ok=True)
+    return logs_path
+# --- End of copied logic ---
+
+# Create a debug log file in the user-writable logs directory
+logs_dir = get_logs_dir()
+debug_log_path = os.path.join(logs_dir, f'numpy_hook_{datetime.now().strftime("%Y%m%d-%H%M%S")}.log')
 with open(debug_log_path, 'w') as f:
     f.write(f"NumPy hook running at {datetime.now()}\n")
     f.write(f"Python version: {sys.version}\n")
     f.write(f"Working directory: {os.getcwd()}\n")
+    f.write(f"Log directory: {logs_dir}\n")
 
 # Set up environment variables to restrict threading
 for var_name, value in {

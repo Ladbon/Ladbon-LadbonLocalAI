@@ -1,10 +1,12 @@
-; -- LadboAIDesktop.iss --
-; Inno Setup script for Ladbon AI Desktop
+; -- LadbonAIDesktop.iss --
+; Inno Setup script for Ladbon AI Desktop (fixed & compilable)
 
-#define MyAppName "Ladbon AI Desktop"
-#define MyAppVersion "1.1"
-#define MyAppExeName "Ladbon AI Desktop.exe"
-#define IconSource "ladbon_ai.ico"
+#define MyAppName      "Ladbon AI Desktop"
+#define MyAppVersion   "1.1"
+#define MyAppExeName   "Ladbon AI Desktop.exe"
+#define IconSource     "ladbon_ai.ico"
+#define RedistExe      "VC_redist.x64.exe"   ; put this in a "redist" subfolder
+#define AppDataName    "Ladbon AI Desktop"   ; goes under %LOCALAPPDATA%
 
 #pragma message "Checking for icon file..."
 #if FileExists(AddBackslash(SourcePath) + IconSource)
@@ -17,49 +19,79 @@
 [Setup]
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
-DefaultDirName={autopf}\{#MyAppName}
+DefaultDirName={autopf64}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2
 SolidCompression=yes
+DiskSpanning=yes
+SlicesPerDisk=1
 OutputDir=installer
 OutputBaseFilename=Ladbon_AI_Desktop_Setup
-; Set icon if available
+
+; Force 64-bit mode
+ArchitecturesInstallIn64BitMode=x64
+ArchitecturesAllowed=x64
+; Always install to Program Files (never Program Files (x86))
+DisableProgramGroupPage=yes
+UsePreviousAppDir=no
+AlwaysShowDirOnReadyPage=yes
 #ifdef USEICONFILE
 SetupIconFile={#AddBackslash(SourcePath) + IconSource}
 #endif
 
 [Dirs]
-Name: "{app}\docs"; Permissions: users-modify
-Name: "{app}\img"; Permissions: users-modify
-Name: "{app}\logs"; Permissions: users-modify
-Name: "{app}\models"; Permissions: users-modify
+Name: "{app}"
+Name: "{localappdata}\{#AppDataName}"
+Name: "{localappdata}\{#AppDataName}\docs"
+Name: "{localappdata}\{#AppDataName}\img"
+Name: "{localappdata}\{#AppDataName}\logs"
+Name: "{localappdata}\{#AppDataName}\models"
 
 [Files]
+; 1) Core app - includes all files and folders from the PyInstaller build
 Source: "dist\{#MyAppName}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "docs\*"; DestDir: "{app}\docs"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "img\*"; DestDir: "{app}\img"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "models\*"; DestDir: "{app}\models"; Flags: ignoreversion recursesubdirs createallsubdirs
-Source: "settings.json"; DestDir: "{app}"; Flags: ignoreversion
+; 2) VC++ redist (to {tmp})
+Source: "redist\{#RedistExe}"; DestDir: "{tmp}"; Flags: deleteafterinstall
+; 3) PATH fixing batch file
+Source: "Launch_With_Correct_PATH.bat"; DestDir: "{app}"; Flags: ignoreversion
+; 4) Data folders
+Source: "docs\*";   DestDir: "{localappdata}\{#AppDataName}\docs";   Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "img\*";    DestDir: "{localappdata}\{#AppDataName}\img";    Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "models\*"; DestDir: "{localappdata}\{#AppDataName}\models"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "settings.json"; DestDir: "{localappdata}\{#AppDataName}"; Flags: ignoreversion
+; 5) Empty log placeholder
+Source: "logs\README.txt"; DestDir: "{localappdata}\{#AppDataName}\logs"; Flags: ignoreversion skipifsourcedoesntexist
+; 6) Icon
 #ifdef USEICONFILE
 Source: "{#AddBackslash(SourcePath) + IconSource}"; DestDir: "{app}"; Flags: ignoreversion
 #endif
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{#MyAppName}";      Filename: "{app}\Launch_With_Correct_PATH.bat"; IconFilename: "{app}\{#IconSource}"
+Name: "{commondesktop}\{#MyAppName}"; Filename: "{app}\Launch_With_Correct_PATH.bat"; IconFilename: "{app}\{#IconSource}"
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+; 1) Install VC++ runtime silently
+Filename: "{tmp}\{#RedistExe}"; Parameters: "/quiet /norestart"; \
+  StatusMsg: "Installing Visual C++ Runtime…"; Flags: runhidden
+
+; 2) Launch the app with correct PATH (using the batch file)
+Filename: "{app}\Launch_With_Correct_PATH.bat"; Description: "Launch {#MyAppName}"; \
+  WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent unchecked
 
 [Messages]
-FinishedLabel=Setup has finished installing {#MyAppName} on your computer. You can place GGUF model files in the 'models' folder for local LLM support. Optionally, you can install Ollama separately from ollama.com/download for additional model options.
+FinishedLabel=Setup has finished installing {#MyAppName}. \
+Models live in %LOCALAPPDATA%\{#AppDataName}\models. \
+Drop extra GGUFs there whenever you like. For Ollama support, grab it from ollama.com/download.
 
 [Code]
 function InitializeSetup(): Boolean;
 begin
   Result := True;
-  MsgBox('This installer will set up ' + '{#MyAppName}' + '.' + #13#10 + #13#10 +
-         'For local AI models: Place GGUF model files in the "models" folder after installation.' + #13#10 + #13#10 +
-         'For Ollama models: Install Ollama separately from ollama.com/download', mbInformation, MB_OK);
+  MsgBox('This installer will set up ' + '{#MyAppName}' + '.' + #13#10#13#10 +
+         'Local models belong in "%LOCALAPPDATA%\{#AppDataName}\models".' + #13#10 +
+         'Need more models? Drop GGUF files there after install.' + #13#10#13#10 +
+         'Want Ollama functionality? Install it separately from ollama.com/download.',
+         mbInformation, MB_OK);
 end;

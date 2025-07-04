@@ -1,6 +1,7 @@
 import os
 from huggingface_hub import hf_hub_download
 from utils.logger import setup_logger # Import logger
+from utils.data_paths import get_models_dir # Import our new path utility
 
 logger = setup_logger(__name__) # Setup logger for this module
 
@@ -11,8 +12,7 @@ class ModelManager:
         
         # Set models directory
         if models_dir is None:
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            models_dir = os.path.join(base_dir, "models")
+            models_dir = get_models_dir()  # Get models dir from our utility function
         
         self.models_dir = models_dir
         os.makedirs(models_dir, exist_ok=True)
@@ -21,9 +21,9 @@ class ModelManager:
         self.llamacpp_client = None
         self.ollama_client = None
         
-        # Define available models with CORRECTED sizes
+        # Define available models with CORRECTED sizes and ID matching
         self.available_models = {
-            "llama2-7b-chat": { # Changed from "llama2-7b"
+            "llama": { # ID matches the prefix found in the filename by llamacpp_client
                 "repo_id": "TheBloke/Llama-2-7B-Chat-GGUF",
                 "filename": "llama-2-7b-chat.Q4_K_M.gguf",
                 "description": "Llama 2 7B (Chat)",
@@ -127,10 +127,32 @@ class ModelManager:
         
     def get_active_client(self):
         """Return the active client that has a model loaded"""
-        if hasattr(self, 'llamacpp_client') and self.llamacpp_client and self.llamacpp_client.health():
-            return self.llamacpp_client
-        elif hasattr(self, 'ollama_client') and self.ollama_client and self.ollama_client.health():
-            return self.ollama_client
+        logger.debug("Checking for active client with loaded model...")
+        
+        # First check integrated LlamaCPP client
+        if hasattr(self, 'llamacpp_client') and self.llamacpp_client:
+            is_healthy = self.llamacpp_client.health()
+            logger.debug(f"LlamaCppClient health check: {is_healthy}")
+            if is_healthy:
+                logger.info(f"Using active LlamaCppClient with model: {self.llamacpp_client.model_path}")
+                return self.llamacpp_client
+            else:
+                logger.warning(f"LlamaCppClient exists but health check failed. Model path: {getattr(self.llamacpp_client, 'model_path', 'None')}")
         else:
-            logger.error("No active clients available or no models loaded")
-            return None
+            logger.warning("No LlamaCppClient available")
+        
+        # Then check Ollama client
+        if hasattr(self, 'ollama_client') and self.ollama_client:
+            is_healthy = self.ollama_client.health()
+            logger.debug(f"OllamaClient health check: {is_healthy}")
+            if is_healthy:
+                logger.info("Using active OllamaClient")
+                return self.ollama_client
+            else:
+                logger.warning("OllamaClient exists but health check failed")
+        else:
+            logger.warning("No OllamaClient available")
+            
+        # If we reached here, no client is active/healthy
+        logger.error("No active clients available or no models loaded")
+        return None

@@ -44,16 +44,15 @@ if os.path.exists(lib_path):
     for file_path in glob.glob(os.path.join(lib_path, '**'), recursive=True):
         if os.path.isfile(file_path):
             file_count += 1
-            # Calculate the appropriate destination path
+            # Calculate the appropriate destination path - ALWAYS to llama_cpp/lib for DLLs
             rel_path = os.path.relpath(file_path, llama_cpp_path)
             dest_path = os.path.join('llama_cpp', os.path.dirname(rel_path))
-            print(f"PyInstaller hook: Adding binary {os.path.basename(file_path)} to {dest_path}")
+            print(f"PyInstaller hook: Adding binary {os.path.basename(file_path)} to {dest_path} ONLY")
             binaries.append((file_path, dest_path))
             
-            # For Windows, also add DLLs to root directory for easier loading
+            # Do not add DLLs anywhere else - only in llama_cpp/lib
             if platform.system() == "Windows" and file_path.endswith('.dll'):
-                print(f"PyInstaller hook: Also adding DLL to root: {os.path.basename(file_path)}")
-                binaries.append((file_path, '.'))
+                print(f"PyInstaller hook: DLL {os.path.basename(file_path)} will ONLY be in llama_cpp/lib")
     
     print(f"PyInstaller hook: Added {file_count} files from llama_cpp/lib")
 else:

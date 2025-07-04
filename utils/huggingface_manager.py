@@ -5,10 +5,13 @@ import subprocess
 import json
 import inspect
 import traceback
+import time
 from utils.logger import setup_logger
 from huggingface_hub import hf_hub_download
 from tqdm import tqdm
 import sys
+from utils.hf_auth import load_hf_token, is_hf_logged_in, setup_huggingface
+from utils.data_paths import get_models_dir
 
 logger = setup_logger('huggingface_manager')
 
@@ -23,11 +26,14 @@ class HuggingFaceManager:
     
     def __init__(self, models_dir=None):
         if models_dir is None:
-            base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            models_dir = os.path.join(base_dir, "models")
+            models_dir = get_models_dir()  # Use our utility function
         
         self.models_dir = models_dir
         os.makedirs(models_dir, exist_ok=True)
+        logger.info(f"HuggingFaceManager initialized with models directory: {self.models_dir}")
+        
+        # Set up HuggingFace authentication and cache
+        setup_huggingface()
         
         # Available model templates - just identifiers and repos, not sizes
         self.model_templates = {
@@ -435,14 +441,24 @@ except Exception as e:
         try:
             logger.info(f"Downloading model: {model_id} from repo: {model_info['repo_id']} to file: {model_info['filename']}")
             
-            # Using hf_hub_download directly
-            downloaded_path = hf_hub_download(
-                repo_id=model_info["repo_id"],
-                filename=model_info["filename"],
-                local_dir=self.models_dir,
-                local_dir_use_symlinks=False,
-                resume_download=True
-            )
+            # Using hf_hub_download directly with authentication token if available
+            token = load_hf_token()
+            download_args = {
+                "repo_id": model_info["repo_id"],
+                "filename": model_info["filename"],
+                "local_dir": self.models_dir,
+                "local_dir_use_symlinks": False,
+                "resume_download": True
+            }
+            
+            # Add token if available
+            if token:
+                download_args["token"] = token
+                logger.info(f"Using authentication token for download")
+            else:
+                logger.warning("No Hugging Face token found, attempting download without authentication")
+                
+            downloaded_path = hf_hub_download(**download_args)
             
             if os.path.exists(downloaded_path):
                 logger.info(f"Successfully downloaded {model_id} to {downloaded_path}")
@@ -458,10 +474,7 @@ except Exception as e:
             return False, f"Error downloading {model_id}: {str(e)}"
     
     def simple_download_model(self, model_id, progress_callback=None, token=None):
-        """Enhanced download method with better progress tracking"""
-        import os
-        import time
-        
+        """Fixed download method with direct URL download as fallback for HuggingFace Hub downloads"""
         logger.info(f"Starting download for model: {model_id}")
         
         try:
@@ -480,91 +493,84 @@ except Exception as e:
             output_path = os.path.join(self.models_dir, filename)
             
             # Signal start of download
+            logger.info(f"====== MODEL DOWNLOAD STARTED: {model_id} - 0% ======")
             if progress_callback:
                 progress_callback(0)
             
-            # Custom progress callback that updates our UI
-            class UIProgressCallback:
-                def __init__(self, ui_callback):
-                    self.ui_callback = ui_callback
-                    self.last_percent = 0
-                    self.last_update_time = time.time()
-                
-                def __call__(self, progress, total):
-                    if total > 0:
-                        percent = int(min(progress / total * 100, 100))
-                        
-                        # Only update UI if percent changed or 0.5 seconds passed
-                        current_time = time.time()
-                        if percent != self.last_percent or current_time - self.last_update_time > 0.5:
-                            logger.info(f"Download progress: {percent}% ({progress/(1024*1024):.1f}/{total/(1024*1024):.1f} MB)")
-                            if self.ui_callback:
-                                # Use PyQt's thread-safe approach
-                                from PyQt5.QtCore import QMetaObject, Qt, Q_ARG
-                                QMetaObject.invokeMethod(
-                                    self.ui_callback.__self__, 
-                                    self.ui_callback.__name__, 
-                                    Qt.ConnectionType.QueuedConnection,
-                                    Q_ARG(int, percent)
-                                )
-                            self.last_percent = percent
-                            self.last_update_time = current_time
+            # BYPASS THE HUGGINGFACE_HUB DOWNLOAD AND USE DIRECT HTTP DOWNLOAD
+            # This avoids the 'NoneType' has no attribute 'write' error completely
+            # Construct direct URL to the file
+            direct_url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
+            fallback_url = f"https://huggingface.co/{repo_id}/resolve/master/{filename}"
             
-            # Create our progress tracker
-            ui_progress = UIProgressCallback(progress_callback) if progress_callback else None
-            
-            logger.info(f"Downloading model {model_id} from {repo_id}/{filename}")
+            logger.info(f"Attempting direct download from: {direct_url}")
             
             try:
-                from huggingface_hub import hf_hub_download
-                kwargs = {
-                    "repo_id": repo_id,
-                    "filename": filename,
-                    "local_dir": self.models_dir,
-                    "force_download": False,
-                    "resume_download": True,
-                }
-                # Check if the file already exists
-                if os.path.exists(output_path):
-                    logger.info(f"Model {model_id} is already downloaded.")
+                # Use requests with stream=True for better handling of large files
+                stored_token = token or load_hf_token()
+                headers = {}
+                if stored_token:
+                    headers["Authorization"] = f"Bearer {stored_token}"
+                
+                # First try the main branch
+                response = requests.get(direct_url, headers=headers, stream=True, timeout=30)
+                
+                # If main branch fails, try master branch
+                if response.status_code != 200:
+                    logger.warning(f"Main branch download failed with status {response.status_code}, trying master branch")
+                    response = requests.get(fallback_url, headers=headers, stream=True, timeout=30)
+                
+                if response.status_code == 200:
+                    # Get total file size if available
+                    total_size = int(response.headers.get('content-length', 0))
+                    logger.info(f"Total download size: {total_size / (1024*1024):.2f} MB")
+                    
+                    # Download with progress tracking
+                    downloaded_size = 0
+                    last_percent_logged = -1
+                    
+                    with open(output_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:  # filter out keep-alive chunks
+                                f.write(chunk)
+                                downloaded_size += len(chunk)
+                                
+                                # Update progress
+                                if total_size > 0:
+                                    percent = int((downloaded_size / total_size) * 100)
+                                    
+                                    # Only log at most once per percent to avoid flooding logs
+                                    if percent != last_percent_logged:
+                                        last_percent_logged = percent
+                                        
+                                        # Log at 10% intervals and update UI
+                                        if percent % 10 == 0:
+                                            logger.info(f"Download progress: {percent}%")
+                                        if progress_callback:
+                                            progress_callback(percent)
+                    
+                    # Final progress update
                     if progress_callback:
                         progress_callback(100)
+                    
+                    file_size_mb = os.path.getsize(output_path) / (1024*1024)
+                    logger.info(f"Successfully downloaded {model_id} to {output_path} ({file_size_mb:.1f} MB)")
                     return True, output_path
-
-                # Add token if provided
-                if token:
-                    kwargs["token"] = token
-                    logger.info("Using authentication token for download")
-                    
-                # Check if this version supports progress_callback
-                import inspect
-                if 'progress_callback' in inspect.signature(hf_hub_download).parameters and ui_progress:
-                    kwargs["progress_callback"] = ui_progress
-                    logger.info("Using native progress callback")
-                    
-                # Download the model
-                downloaded_path = hf_hub_download(**kwargs)
-                
-                if os.path.exists(downloaded_path):
-                    logger.info(f"Successfully downloaded {model_id} to {downloaded_path}")
-                    if progress_callback:
-                        progress_callback(100)
-                    return True, downloaded_path
                 else:
-                    logger.error(f"Download completed but file not found at expected path")
+                    logger.error(f"Failed to download file: HTTP {response.status_code}")
+                    return False, f"HTTP error: {response.status_code}"
+            
             except Exception as e:
-                logger.warning(f"Error with huggingface_hub download: {str(e)}")
-                # Fall back to direct download if needed
-                
-            # Signal completion if we reached this point
-            if progress_callback:
-                progress_callback(100)
-                
-            return True, output_path
+                logger.exception(f"Error with direct download: {str(e)}")
+                if progress_callback:
+                    progress_callback(100)
+                return False, f"Download error: {str(e)}"
             
         except Exception as e:
-            logger.exception(f"Error downloading model {model_id}")
-            return False, f"Error downloading {model_id}: {str(e)}"
+            logger.exception(f"Error in download process: {str(e)}")
+            if progress_callback:
+                progress_callback(100)
+            return False, f"Error: {str(e)}"
     
     def check_huggingface_version(self):
         """Check HuggingFace Hub version and capabilities"""
@@ -599,6 +605,10 @@ except Exception as e:
             QMessageBox.information(None, "HuggingFace Hub Info", info)
             
             # Log this information
+            logger.info(f"HuggingFace Hub Version: {version}")
+            logger.info(f"Supports progress_callback: {has_progress}")
+            logger.info(f"Supports force_download: {has_force}")
+            logger.info(f"Supports resume_download: {has_resume}")
             logger.info(f"HuggingFace Hub Version: {version}")
             logger.info(f"hf_hub_download parameters: {', '.join(param_names)}")
             

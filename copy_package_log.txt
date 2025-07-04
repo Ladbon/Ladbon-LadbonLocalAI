@@ -1,0 +1,88 @@
+=================================================== 
+Python Executable: .venv\Scripts\python.exe 
+Site-packages: C:\Users\ladfr\source\localai\src\.venv\Lib\site-packages 
+=================================================== 
+Found llama_cpp_python dist-info: C:\Users\ladfr\source\localai\src\.venv\Lib\site-packages\llama_cpp_python-0.3.9.dist-info 
+Creating backup of existing llama_cpp package... 
+Creating backup of existing llama_cpp_python dist-info... 
+Backing up: dist\Ladbon AI Desktop\_internal\llama_cpp_python-0.3.9.dist-info 
+Copying llama_cpp from C:\Users\ladfr\source\localai\src\.venv\Lib\site-packages to package... 
+Copying C:\Users\ladfr\source\localai\src\.venv\Lib\site-packages\llama_cpp_python-0.3.9.dist-info to package... 
+Checking for CUDA DLLs in system... 
+Found CUDA path: C:\Program 
+Found CUDA path: C:\Program 
+Found CUDA path: C:\Program 
+Found CUDA path: C:\Program 
+Found CUDA path: C:\Program 
+Found CUDA path: C:\Program 
+Found CUDA path: C:\Program 
+Found CUDA path: C:\Program 
+Found CUDA path: C:\Program 
+Found CUDA path: C:\Program 
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\lib
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\lib_path.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\llama.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\llama_cache.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\llama_chat_format.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\llama_cpp.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\llama_grammar.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\llama_speculative.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\llama_tokenizer.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\llama_types.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\llava_cpp.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\py.typed
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\_ctypes_extensions.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\_ggml.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\_internals.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\_logger.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\_utils.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__init__.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__pycache__
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\lib\ggml-base.dll
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\lib\ggml-base.lib
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\lib\ggml-cpu.dll
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\lib\ggml-cpu.lib
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\lib\ggml-cuda.dll
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\lib\ggml-cuda.lib
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\lib\ggml.dll
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\lib\ggml.lib
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\lib\llama.dll
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\lib\llama.lib
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\lib\llava.dll
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\lib\llava.lib
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server\app.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server\cli.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server\errors.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server\model.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server\settings.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server\types.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server\__init__.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server\__main__.py
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server\__pycache__
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server\__pycache__\app.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server\__pycache__\cli.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server\__pycache__\errors.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server\__pycache__\model.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server\__pycache__\settings.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server\__pycache__\types.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server\__pycache__\__init__.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\server\__pycache__\__main__.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__pycache__\lib_path.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__pycache__\llama.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__pycache__\llama_cache.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__pycache__\llama_chat_format.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__pycache__\llama_cpp.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__pycache__\llama_grammar.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__pycache__\llama_speculative.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__pycache__\llama_tokenizer.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__pycache__\llama_types.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__pycache__\llava_cpp.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__pycache__\_ctypes_extensions.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__pycache__\_ggml.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__pycache__\_internals.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__pycache__\_logger.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__pycache__\_utils.cpython-311.pyc
+C:\Users\ladfr\source\localai\src\dist\Ladbon AI Desktop\_internal\llama_cpp\__pycache__\__init__.cpython-311.pyc
+=================================================== 
+Copying complete! 

@@ -8,13 +8,14 @@ import logging
 import traceback
 from datetime import datetime
 
+from utils.data_paths import get_logs_dir
+
 # Set up basic console logging first, since the regular logger might not be set up yet
-import logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("numpy_init_fix")
 
-# Create a debug log file directly in the current working directory
-debug_log_path = os.path.join(os.getcwd(), f'numpy_fix_debug_{datetime.now().strftime("%Y%m%d-%H%M%S")}.log')
+# Create a debug log file in the logs directory
+debug_log_path = os.path.join(get_logs_dir(), f'numpy_fix_debug_{datetime.now().strftime("%Y%m%d-%H%M%S")}.log')
 try:
     with open(debug_log_path, 'w') as f:
         f.write(f"NumPy fix debug log created at {datetime.now()}\n")
